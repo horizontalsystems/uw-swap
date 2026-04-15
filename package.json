@@ -1,0 +1,19 @@
+{
+  "name": "uw-swap",
+  "author": "Horizontal Systems",
+  "description": "AI agent skills for USwap — cross-chain cryptocurrency swap aggregator",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "skills/"
+  ],
+  "keywords": [
+    "ai-agent",
+    "skill",
+    "crypto",
+    "swap",
+    "defi",
+    "thorchain",
+    "cross-chain"
+  ]
+}

@@ -1,6 +1,6 @@
 ---
 name: uw-swap
-description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix).
+description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE).
 version: "1.0.0"
 metadata:
   author: Horizontal Systems

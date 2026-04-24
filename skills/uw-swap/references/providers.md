@@ -23,21 +23,70 @@ For BARTER and ONEINCH, use the contract address directly without a symbol — b
 
 ## Providers
 
-| Provider | Type | Supported Chains / Notes |
-|---|---|---|
-| THORCHAIN | DEX | BTC, ETH, AVAX, BCH, LTC, DOGE, GAIA, BSC, and more |
-| MAYACHAIN | DEX | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
-| ONEINCH | DEX aggregator | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
-| BARTER | DEX aggregator | EVM same-chain |
-| NEAR | DEX | NEAR ecosystem + cross-chain via 1Click |
-| LETSEXCHANGE | P2P | Wide cross-chain coverage |
-| STEALTHEX | P2P | Wide cross-chain coverage |
-| QUICKEX | P2P | Wide cross-chain coverage |
-| SWAPUZ | P2P | Wide cross-chain coverage |
-| EXOLIX | P2P | Wide cross-chain coverage |
+| Provider | Type | AML Policy | Supported Chains / Notes |
+|---|---|---|---|
+| THORCHAIN | DEX | `auto` | BTC, ETH, AVAX, BCH, LTC, DOGE, GAIA, BSC, and more |
+| MAYACHAIN | DEX | `auto` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
+| ONEINCH | DEX aggregator | `controlled` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
+| BARTER | DEX aggregator | `controlled` | EVM same-chain |
+| NEAR | DEX | `controlled` | NEAR ecosystem + cross-chain via 1Click |
+| LETSEXCHANGE | P2P | `controlled` | Wide cross-chain coverage |
+| STEALTHEX | P2P | `controlled` | Wide cross-chain coverage |
+| QUICKEX | P2P | `precheck` | Wide cross-chain coverage |
+| SWAPUZ | P2P | `flexible` | Wide cross-chain coverage |
+| EXOLIX | P2P | `flexible` | Wide cross-chain coverage |
+| CCE | P2P | `flexible` | Wide cross-chain coverage |
 
 **DEX** = decentralized, on-chain execution.  
 **P2P** = centralized order matching, requires `providerSwapId` for tracking.
+
+## AML Policy
+
+Every provider is classified with an `amlPolicy` describing how they handle AML (anti-money-laundering) checks. The policy is returned on both the provider entity (`GET /v1/providers`) and on every quote's route (`amlPolicy` field).
+
+Use it to set user expectations before a swap — especially when privacy or the risk of funds being held matters.
+
+| Policy | Meaning |
+|---|---|
+| `auto` | This exchange uses its own liquidity and is privacy-friendly. Transactions are processed without AML blocking. |
+| `flexible` | This exchange usually refunds transactions that fail AML checks. In rare cases, funds may be temporarily blocked if additional verification is required. |
+| `controlled` | Provider enforces strict AML controls. Swaps may be held or require additional verification (e.g. KYC) before completion. |
+| `precheck` | This exchange supports AML precheck of wallet addresses, but the precheck **must be run before sending funds**. Funds sent without a passing precheck may be blocked by the exchange until KYC/verification is completed. |
+
+Providers may also expose a `contact` field (typically an email) on the provider entity — use this to direct users when a swap is held for AML review.
+
+### Running an AML Precheck
+
+When the chosen route's `amlPolicy` is `precheck`, run the precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
+
+```
+GET $USWAP_BASE_URL/v1/quote/check-addresses?addresses=<csv>
+X-Agent-Key: $USWAP_AGENT_KEY
+```
+
+Pass one or more addresses as a comma-separated list, e.g. `addresses=bc1q...,0xabc...`.
+
+**Response:**
+
+```json
+{
+  "passedAmlCheck": true,
+  "results": [
+    { "address": "bc1q...", "passed": true, "completed": true },
+    { "address": "0xabc...", "passed": true, "completed": true }
+  ]
+}
+```
+
+| `passedAmlCheck` | Meaning | Action |
+|---|---|---|
+| `true` | All addresses passed | Safe to send funds |
+| `false` | At least one address failed | **Do not send funds** — inform the user |
+| `null` | Check incomplete/inconclusive | Retry later or warn the user |
+
+A 502 response means the AML check service is unavailable — retry, or warn the user before proceeding.
+
+This endpoint is powered by Quickex's AML checker and is useful for any `precheck`-policy provider.
 
 ## Token Lists
 

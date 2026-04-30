@@ -14,17 +14,16 @@ npx clawhub@latest install uswap
 
 ## Setup
 
-Set these environment variables before using the skill:
+Set this environment variable before using the skill:
 
 ```
-USWAP_BASE_URL=https://swap-api.unstoppable.money/agent
 USWAP_AGENT_KEY=<your-agent-key>
 ```
 
 Register once to get your `USWAP_AGENT_KEY`:
 
 ```bash
-curl -X POST $USWAP_BASE_URL/register \
+curl -X POST https://swap-api.unstoppable.money/agent/register \
   -H "Content-Type: application/json" \
   -d '{"name": "my-agent"}'
 ```

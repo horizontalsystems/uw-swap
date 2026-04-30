@@ -60,7 +60,7 @@ Providers may also expose a `contact` field (typically an email) on the provider
 When the chosen route's `amlPolicy` is `precheck`, run the precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
 
 ```
-GET $USWAP_BASE_URL/v1/quote/check-addresses?addresses=<csv>
+GET https://swap-api.unstoppable.money/agent/v1/quote/check-addresses?addresses=<csv>
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -91,7 +91,7 @@ This endpoint is powered by Quickex's AML checker and is useful for any `prechec
 ## Token Lists
 
 ```
-GET $USWAP_BASE_URL/v1/tokens?provider=THORCHAIN
+GET https://swap-api.unstoppable.money/agent/v1/tokens?provider=THORCHAIN
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -101,7 +101,7 @@ Returns supported tokens for the given provider.
 ## List Providers
 
 ```
-GET $USWAP_BASE_URL/v1/providers
+GET https://swap-api.unstoppable.money/agent/v1/providers
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 

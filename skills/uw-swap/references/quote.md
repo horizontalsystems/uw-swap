@@ -3,7 +3,7 @@
 ## Step 1 — Dry Quote (compare routes)
 
 ```
-POST $USWAP_BASE_URL/v1/quote
+POST https://swap-api.unstoppable.money/agent/v1/quote
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
 ```

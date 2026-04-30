@@ -1,7 +1,7 @@
 # Tracking Swaps
 
 ```
-POST $USWAP_BASE_URL/v1/track
+POST https://swap-api.unstoppable.money/agent/v1/track
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
 ```

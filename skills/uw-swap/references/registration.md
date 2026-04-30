@@ -5,7 +5,7 @@ Registration is a one-time step. Skip this if you already have an `agentKey`.
 ## Register
 
 ```
-POST $USWAP_BASE_URL/register
+POST https://swap-api.unstoppable.money/agent/register
 Content-Type: application/json
 ```
 
@@ -31,7 +31,7 @@ Store `agentKey` as `USWAP_AGENT_KEY`. It is shown only once.
 ## Check Agent Status
 
 ```
-GET $USWAP_BASE_URL/me
+GET https://swap-api.unstoppable.money/agent/me
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 

@@ -11,13 +11,12 @@ metadata:
     requires:
       env:
         - USWAP_AGENT_KEY
-        - USWAP_BASE_URL
 ---
 
 # USwap — Cross-Chain Swap Aggregator
 
 All requests require `X-Agent-Key: $USWAP_AGENT_KEY` header.  
-Base URL: `$USWAP_BASE_URL` (e.g. `https://swap-api.unstoppable.money/agent`)
+Base URL: `https://swap-api.unstoppable.money/agent`
 
 ## Task Routing
 

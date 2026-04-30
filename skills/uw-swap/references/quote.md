@@ -126,7 +126,31 @@ If the current allowance is already sufficient, you can skip the approval. Selli
 
 ### THORChain and Mayachain — `memo` is required
 
-Send exactly `sellAmount` of `sellAsset` to `inboundAddress`. Include the `memo` field as a transaction memo/OP_RETURN. **Omitting the memo will cause a refund** (and you will pay network fees twice).
+Send exactly `sellAmount` of `sellAsset` to `inboundAddress` and attach the `memo` from the route. **Omitting the memo will cause a refund** (and you will pay network fees twice).
+
+How the memo travels depends on the source chain:
+
+- **EVM chains (ETH, BSC, AVAX, BASE, ARB)** — the route includes a prepared `tx` object: `{ to, from, value, data, gasPrice, gas? }`. `to` is the router contract (not `inboundAddress`); the memo is already encoded into `data`. Sign and broadcast `tx` as-is. `inboundAddress` is informational only.
+- **UTXO chains (BTC, BCH, LTC, DOGE, DASH, ZEC)** — **build the transaction yourself**. Do not use the `tx` field if present; it's not reliable for real wallets (covers only a single address's UTXOs). Construct a transaction with two outputs:
+  1. `sellAmount` to `inboundAddress`
+  2. an `OP_RETURN` output containing the `memo` string
+
+  Select inputs from all of the sender's addresses as needed, and send change back to the sender.
+- **Cosmos / THOR / MAYA / others** — send `sellAmount` to `inboundAddress` with `memo` in the standard memo field.
+
+### Mayachain + ZCash — `shielded_memo_address`
+
+When selling `ZEC.ZEC` via Mayachain with `dry: false`, the route may include a `shielded_memo_address` field. This is a Zcash shielded address whose memo field supports longer text than a standard transparent address output — long enough to hold the full Mayachain memo.
+
+Both outputs must be included in the same transaction: send the funds amount to `inboundAddress`, and send the memo text to `shielded_memo_address`. The shielded output carries the memo; the transparent output carries the funds. Splitting them into separate transactions will not work.
+
+```json
+{
+  "inboundAddress": "t1...",
+  "shielded_memo_address": "u1zcash...",
+  "memo": "=:ETH.ETH:0x..."
+}
+```
 
 ### P2P providers — `txExtraAttribute`
 
@@ -159,16 +183,6 @@ Include the key-value pair from `txExtraAttribute` in your inbound transaction e
 | NEAR.NEAR | `memo` (string) | NEAR provider |
 
 If `txExtraAttribute` is absent or empty, no extra field is needed.
-
-### Mayachain + ZCash — `shielded_memo_address`
-
-When selling `ZEC.ZEC` via Mayachain with `dry: false`, the route may include a `shielded_memo_address` field. This is a Zcash unified address that encodes the memo using the shielded protocol. Use this as the destination instead of `inboundAddress` when present — it enables private memo delivery required by Mayachain's ZCash integration.
-
-```json
-{
-  "shielded_memo_address": "u1zcash..."
-}
-```
 
 ## Step 4 — Track
 

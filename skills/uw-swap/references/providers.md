@@ -30,7 +30,7 @@ For BARTER and ONEINCH, use the contract address directly without a symbol — b
 | ONEINCH | DEX aggregator | `controlled` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
 | BARTER | DEX aggregator | `controlled` | EVM same-chain |
 | NEAR | DEX | `controlled` | NEAR ecosystem + cross-chain via 1Click |
-| LETSEXCHANGE | P2P | `controlled` | Wide cross-chain coverage |
+| LETSEXCHANGE | P2P | `flexible` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `controlled` | Wide cross-chain coverage |
 | QUICKEX | P2P | `precheck` | Wide cross-chain coverage |
 | SWAPUZ | P2P | `flexible` | Wide cross-chain coverage |

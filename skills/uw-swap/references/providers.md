@@ -41,39 +41,38 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 
 | Provider | Type | AML Policy | Supported Chains / Notes |
 |---|---|---|---|
-| THORCHAIN | DEX | `auto` | BTC, ETH, AVAX, BCH, LTC, DOGE, GAIA, BSC, and more |
-| MAYACHAIN | DEX | `auto` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
-| ONEINCH | DEX aggregator | `controlled` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
-| BARTER | DEX aggregator | `controlled` | EVM same-chain |
-| NEAR | DEX | `controlled` | NEAR ecosystem + cross-chain via 1Click |
-| LETSEXCHANGE | P2P | `flexible` | Wide cross-chain coverage |
-| STEALTHEX | P2P | `controlled` | Wide cross-chain coverage |
-| QUICKEX | P2P | `precheck` | Wide cross-chain coverage |
-| SWAPUZ | P2P | `flexible` | Wide cross-chain coverage |
-| EXOLIX | P2P | `flexible` | Wide cross-chain coverage |
-| CCE | P2P | `flexible` | Wide cross-chain coverage |
+| THORCHAIN | DEX | `excellent` | BTC, ETH, AVAX, BCH, LTC, DOGE, GAIA, BSC, and more |
+| MAYACHAIN | DEX | `excellent` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
+| ONEINCH | DEX aggregator | `excellent` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
+| BARTER | DEX aggregator | `excellent` | EVM same-chain |
+| NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
+| LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
+| STEALTHEX | P2P | `fair` | Wide cross-chain coverage |
+| QUICKEX | P2P | `good` | Wide cross-chain coverage. Supports AML address precheck (see below). |
+| SWAPUZ | P2P | `good` | Wide cross-chain coverage |
+| EXOLIX | P2P | `good` | Wide cross-chain coverage |
+| CCE | P2P | `good` | Wide cross-chain coverage |
 
 **DEX** = decentralized, on-chain execution.  
 **P2P** = centralized order matching, requires `providerSwapId` for tracking.
 
 ## AML Policy
 
-Every provider is classified with an `amlPolicy` describing how they handle AML (anti-money-laundering) checks. The policy is returned on both the provider entity (`GET /v1/providers`) and on every quote's route (`amlPolicy` field).
+Every provider is classified with an `amlPolicy` describing how the provider handles AML (anti-money-laundering) checks. The policy is returned on both the provider entity (`GET /v1/providers`) and on every quote's route (`amlPolicy` field).
 
 Use it to set user expectations before a swap — especially when privacy or the risk of funds being held matters.
 
 | Policy | Meaning |
 |---|---|
-| `auto` | This exchange uses its own liquidity and is privacy-friendly. Transactions are processed without AML blocking. |
-| `flexible` | This exchange usually refunds transactions that fail AML checks. In rare cases, funds may be temporarily blocked if additional verification is required. |
-| `controlled` | Provider enforces strict AML controls. Swaps may be held or require additional verification (e.g. KYC) before completion. |
-| `precheck` | This exchange supports AML precheck of wallet addresses, but the precheck **must be run before sending funds**. Funds sent without a passing precheck may be blocked by the exchange until KYC/verification is completed. |
+| `excellent` | Direct on-chain execution. No provider checks or freezes. Automatic refunds if swap fails. |
+| `good` | Provider checks transactions automatically before completion. If issues are detected, the swap is rejected and funds are refunded. |
+| `fair` | Additional verification may be required for some transactions. If issues are detected, funds are usually refunded automatically. |
 
-Providers may also expose a `contact` field (typically an email) on the provider entity — use this to direct users when a swap is held for AML review.
+Providers may also expose a `contact` field (typically an email) on the provider entity — use this to direct users when a swap is held for review.
 
 ### Running an AML Precheck
 
-When the chosen route's `amlPolicy` is `precheck`, run the precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
+When the chosen route's provider is `QUICKEX`, run the address precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
 
 ```
 GET https://swap-api.unstoppable.money/agent/v1/quote/check-addresses?addresses=<csv>
@@ -102,7 +101,7 @@ Pass one or more addresses as a comma-separated list, e.g. `addresses=bc1q...,0x
 
 A 502 response means the AML check service is unavailable — retry, or warn the user before proceeding.
 
-This endpoint is powered by Quickex's AML checker and is useful for any `precheck`-policy provider.
+This endpoint is powered by Quickex's AML checker. Only QuickEx currently triggers a pre-funding address check; the endpoint is also useful as a general due-diligence tool for any cross-chain swap.
 
 ## Token Lists
 

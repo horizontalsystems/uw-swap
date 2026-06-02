@@ -64,6 +64,19 @@ X-Agent-Key: $USWAP_AGENT_KEY
 
 Pick the route with the best `expectedBuyAmount` or lowest fees.
 
+### Fee types
+
+`expectedBuyAmount` is already net of every fee, so you don't need to sum `fees[]` to know the output — but the breakdown is useful when explaining costs to a user. Each entry has a `type`:
+
+| Type | What it covers |
+|---|---|
+| `service` | The aggregator's service fee. |
+| `liquidity` | Provider / protocol costs: the underlying provider's cut and any relayer/forwarder fee (e.g. Circle's mint relayer). |
+| `inbound` | Source-chain network (gas) fee to initiate the swap. |
+| `affiliate` | Optional affiliate share, when an `affiliate` was set on the request. |
+
+A single route may carry several entries of different types (e.g. a Circle route returns `service` + `liquidity` + `inbound`). All `fees[]` amounts are denominated in the fee's `asset`.
+
 ## Step 2 — Real Quote (create order)
 
 Call the same endpoint with `dry: false` and exactly one provider:

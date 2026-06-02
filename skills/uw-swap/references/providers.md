@@ -45,6 +45,7 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 | MAYACHAIN | DEX | `excellent` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
 | ONEINCH | DEX aggregator | `excellent` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
 | BARTER | DEX aggregator | `excellent` | EVM same-chain |
+| CIRCLE | Bridge | `excellent` | USDC-only cross-chain bridge (Circle CCTPv2). EVM chains: ETH, BASE, ARB, OP, POL, AVAX, and more. Source and destination chains must differ. |
 | NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
 | LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `fair` | Wide cross-chain coverage |

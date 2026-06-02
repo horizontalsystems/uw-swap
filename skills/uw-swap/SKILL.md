@@ -32,7 +32,7 @@ Base URL: `https://swap-api.unstoppable.money/agent`
 1. **Quote (dry)** — `POST /v1/quote` with `dry: true` to compare routes
 2. **Quote (real)** — `POST /v1/quote` with `dry: false` + one provider to create an order
 3. **Send funds** — send `sellAmount` of `sellAsset` to `inboundAddress` with `memo` (if provided)
-4. **Track** — `POST /v1/track` until status is `completed`, `refunded`, or `failed`
+4. **Track** — `POST /v1/track` until status is `completed`, `refunded`, or `failed`. If status becomes `action_required`, the provider is holding the funds and needs the user to contact them — see [track.md](references/track.md#action-required) for `meta.pauseReason` and how to surface the provider's `contacts`.
 
 ## Error Codes
 

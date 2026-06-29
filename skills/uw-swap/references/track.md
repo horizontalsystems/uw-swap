@@ -1,66 +1,49 @@
 # Tracking Swaps
 
 ```
-POST https://swap-api.unstoppable.money/agent/v1/track
+POST https://swap-api.unstoppable.money/agent/v2/track
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
-The request body varies by provider.
-
-## P2P Providers (LETSEXCHANGE, STEALTHEX, QUICKEX, SWAPUZ, EXOLIX)
+Track by the committed route's top-level **`uuid`**. The `/v2/swap` response gives you:
 
 ```json
 {
-  "provider": "LETSEXCHANGE",
-  "providerSwapId": "<providerSwapId from quote response>"
+  "providers": ["THORCHAIN"], …, "execution": { … },
+  "uuid": "b5b1b8c1-4a18-42a0-ab84-374d36f68f17"
 }
 ```
 
-## THORChain / Mayachain
+Store the `uuid`. The server tracks by it alone — it already knows the provider and every swap detail from
+the record, so you never build a request beyond the uuid (and, for DEX swaps, your broadcast tx hash).
+
+## Request
+
+**P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE) and NEAR** — the provider sees your deposit
+on its own, so the `uuid` alone is enough:
 
 ```json
-{
-  "provider": "THORCHAIN",
-  "hash": "<inbound tx hash>",
-  "fromAsset": "BTC.BTC",
-  "toAsset": "ETH.ETH",
-  "toAddress": "0x..."
-}
+{ "uuid": "b5b1b8c1-…" }
 ```
 
-## NEAR
+**DEX swaps (THORChain, Mayachain, 1inch, Barter, Circle)** — i.e. any route whose `execution.method` was
+`thorchain_deposit` or `signed_transaction`. After you broadcast the tx, send its hash as `inboundTxHash`:
 
 ```json
-{
-  "provider": "NEAR",
-  "depositAddress": "<targetAddress from quote response>"
-}
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }
 ```
 
-## CIRCLE
-
-```json
-{
-  "provider": "CIRCLE",
-  "hash": "<burn tx hash on the source chain>",
-  "chainId": "<source chainId, e.g. ethereum>",
-  "fromAsset": "ETH.USDC-0X...",
-  "toAsset": "BASE.USDC-0X...",
-  "toAddress": "0x...",
-  "providerSwapId": "<providerSwapId from quote response>",
-  "fromAddress": "0x...",
-  "fromAmount": "100.0"
-}
-```
-
-`fromAddress` (source EOA) and `fromAmount` (gross sell amount) are optional — Circle's API can't supply them, so pass them through to have them echoed back on the response legs; otherwise those fields come back empty.
+That's the whole flow: **store `uuid` → (DEX) add `inboundTxHash` → POST.** The server remembers the hash
+for subsequent polls. Everything else the tracker needs was stored when the swap was committed, so the
+request never carries anything beyond `{ uuid, inboundTxHash? }`.
 
 ## Response
 
 ```json
 {
   "status": "swapping",
+  "providers": ["THORCHAIN"],
   "legs": [
     {
       "chainId": "bitcoin",
@@ -78,6 +61,10 @@ The request body varies by provider.
 }
 ```
 
+If the swap is recorded but not yet trackable (e.g. a DEX swap you haven't sent `inboundTxHash`
+for), you get `409` with `{ "message": "Swap not trackable yet", "uuid": "…" }` — send the hash, then
+poll again. A `404` means the `uuid` is unknown.
+
 ## Statuses
 
 | Status | Meaning |
@@ -89,9 +76,10 @@ The request body varies by provider.
 | `completed` | Swap finished, funds delivered |
 | `refunded` | Swap failed, funds returned |
 | `failed` | Swap failed, no refund |
+| `expired` | Timed out — no deposit was detected within ~72h, so tracking stopped. The user likely never sent funds (or sent too late). Treat as terminal; a late deposit may still be resolved server-side. |
 | `unknown` | Status could not be determined |
 
-**Terminal statuses** (stop polling): `completed`, `refunded`, `failed`.
+**Terminal statuses** (stop polling): `completed`, `refunded`, `failed`, `expired`.
 
 `action_required` is **non-terminal** — keep polling, because the provider may still resolve the swap to `completed` / `refunded` / `failed` after manual intervention.
 
@@ -110,4 +98,4 @@ When `status === "action_required"`, the response includes `meta.pauseReason` de
 | `provider_error` | Provider-side error after a deposit (catch-all) |
 | `manual_review` | Provider's generic "needs human attention" state |
 
-To help the user recover funds, surface the provider's contact info from `GET /v1/providers` (the `contacts` field — `{ email?, telegram?, ... }`) alongside `meta.pauseReason`. The user reaches out to the provider directly; the provider then completes or refunds the swap, after which the next poll will report a terminal status.
+To help the user recover funds, surface the provider's contact info from `GET /v2/providers` (the `contacts` field — `{ email?, telegram?, ... }`) alongside `meta.pauseReason`. The user reaches out to the provider directly; the provider then completes or refunds the swap, after which the next poll will report a terminal status.

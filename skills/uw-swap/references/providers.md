@@ -55,11 +55,11 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 | CCE | P2P | `good` | Wide cross-chain coverage |
 
 **DEX** = decentralized, on-chain execution.  
-**P2P** = centralized order matching, requires `providerSwapId` for tracking.
+**P2P** = centralized order matching; the provider watches its deposit address, so tracking needs only the route's `uuid` (no broadcast tx hash).
 
 ## AML Policy
 
-Every provider is classified with an `amlPolicy` describing how the provider handles AML (anti-money-laundering) checks. The policy is returned on both the provider entity (`GET /v1/providers`) and on every quote's route (`amlPolicy` field).
+Every provider is classified with an `amlPolicy` describing how the provider handles AML (anti-money-laundering) checks. The policy is returned on both the provider entity (`GET /v2/providers`) and on every quote's route (`amlPolicy` field).
 
 Use it to set user expectations before a swap — especially when privacy or the risk of funds being held matters.
 
@@ -76,7 +76,7 @@ Providers may also expose a `contact` field (typically an email) on the provider
 When the chosen route's provider is `QUICKEX`, run the address precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
 
 ```
-GET https://swap-api.unstoppable.money/agent/v1/quote/check-addresses?addresses=<csv>
+GET https://swap-api.unstoppable.money/agent/v2/check-addresses?addresses=<csv>
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -107,7 +107,7 @@ This endpoint is powered by Quickex's AML checker. Only QuickEx currently trigge
 ## Token Lists
 
 ```
-GET https://swap-api.unstoppable.money/agent/v1/tokens?provider=THORCHAIN
+GET https://swap-api.unstoppable.money/agent/v2/tokens?provider=THORCHAIN
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -117,14 +117,18 @@ Returns supported tokens for the given provider.
 ## List Providers
 
 ```
-GET https://swap-api.unstoppable.money/agent/v1/providers
+GET https://swap-api.unstoppable.money/agent/v2/providers
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
+
+Each provider includes `executionType` — the single execution method it commits to: `transfer`,
+`signed_transaction`, or `thorchain_deposit`. If you can only relay a deposit address to the user (no
+wallet to sign/build a tx), use `transfer` providers only, and filter on this **before quoting**.
 
 ## Rate Limiting
 
 - Starts at **15 req/hour** for new agents
 - Scales up automatically with fulfillment ratio (up to **100 req/hour**)
 - Agents with ≥50% fulfillment ratio receive a **3× bonus** (up to **200 req/hour**)
-- Creating real orders (`dry: false`) but not sending funds lowers your ratio and rate limit
+- Creating real orders (via `/v2/swap`) but not sending funds lowers your ratio and rate limit
 - After 3 suspensions an agent is permanently banned

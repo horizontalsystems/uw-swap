@@ -1,6 +1,6 @@
 # uw-swap
 
-AI agent skills for [swap.unstoppable.money](https://swap.unstoppable.money) — a cross-chain cryptocurrency swap aggregator supporting THORChain, Mayachain, 1Inch, and P2P providers.
+AI agent skills for [swap.unstoppable.money](https://swap.unstoppable.money) — a cross-chain cryptocurrency swap aggregator supporting THORChain, Mayachain, 1Inch, Jupiter, LI.FI, the Stellar venues, and P2P providers.
 
 ## Install
 
@@ -32,8 +32,8 @@ curl -X POST https://swap-api.unstoppable.money/agent/register \
 
 | Skill | Description |
 |---|---|
-| `uswap` | Get quotes, execute swaps, track status across 10+ providers and 30+ chains |
+| `uswap` | Get quotes, execute swaps, track status across 20 providers and 30+ chains |
 
 ## Supported Providers
 
-THORChain · Mayachain · 1Inch · Barter · NEAR · LetsExchange · StealthEx · Quickex · Swapuz · Exolix
+THORChain · Mayachain · 1Inch · Barter · Jupiter · LI.FI · Circle · NEAR · StellarBroker · Soroswap · Aquarius · Stellar DEX · Axelar ITS · LetsExchange · StealthEx · Quickex · Swapuz · Exolix · CCE · PegasusSwap

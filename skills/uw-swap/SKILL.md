@@ -1,6 +1,6 @@
 ---
 name: uw-swap
-description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE).
+description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, Barter, Jupiter (Solana), LI.FI (cross-chain EVM + Solana + Tron), Circle, NEAR, the Stellar venues (StellarBroker, Soroswap, Aquarius, Stellar DEX), the Axelar ITS bridge, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE).
 version: "1.0.0"
 metadata:
   author: Horizontal Systems
@@ -31,7 +31,7 @@ Base URL: `https://swap-api.unstoppable.money/agent`
 
 1. **Rate** — `POST /v2/rate` to compare routes across providers (read-only, no order)
 2. **Swap** — `POST /v2/swap` with exactly one `provider` + a `destinationAddress` to create the order
-3. **Send funds** — do exactly what the route's `execution` block says: sign its tx, transfer to its `depositAddress` (+ any `attachment`), or deposit to `inboundAddress` with the `memo`. See [quote.md](references/quote.md).
+3. **Send funds** — do exactly what the route's `execution` block says: sign its tx, transfer to its `depositAddress` (+ any `attachment`), deposit to `inboundAddress` with the `memo`, or (StellarBroker only) run the broker's WebSocket session. See [quote.md](references/quote.md).
 4. **Track** — store the route's top-level `uuid` and POST `{ uuid }` to `/v2/track` until status is `completed`, `refunded`, `failed`, or `expired`; for DEX routes also send your broadcast tx hash as `inboundTxHash`. If status becomes `action_required`, the provider is holding the funds and needs the user to contact them — see [track.md](references/track.md#action-required) for `meta.pauseReason` and how to surface the provider's `contacts`.
 
 ## Error Codes

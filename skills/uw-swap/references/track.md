@@ -27,11 +27,12 @@ on its own, so the `uuid` alone is enough:
 { "uuid": "b5b1b8c1-…" }
 ```
 
-**DEX swaps (THORChain, Mayachain, 1inch, Barter, Circle)** — i.e. any route whose `execution.method` was
-`thorchain_deposit` or `signed_transaction`. After you broadcast the tx, send its hash as `inboundTxHash`:
+**DEX swaps (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX,
+StellarBroker, Axelar ITS)** — i.e. any route whose `execution.method` was `thorchain_deposit`,
+`signed_transaction`, or `stellar_broker`. After you broadcast the tx, send its hash as `inboundTxHash`:
 
 ```json
-{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // Solana: the tx signature; Tron: the tx id (txID); Stellar: the tx hash (fee-bumped ⇒ the outer hash works)
 ```
 
 That's the whole flow: **store `uuid` → (DEX) add `inboundTxHash` → POST.** The server remembers the hash

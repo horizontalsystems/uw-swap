@@ -65,7 +65,8 @@ unused part is **refunded**, so describe it as "send up to X", never as a fee. S
 | **provider** | string | yes | The **single** provider to preview (and later commit) with |
 | **destinationAddress** | string | yes | Receiving address — funds must land somewhere |
 | refundAddress | string | no | Refund address on failure (required by most P2P providers) |
-| sourceAddress | string | conditional | The build signal — see below. Required for `signed_transaction` providers (1inch/Barter/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) since the tx needs a `from` / signer, and for STELLARBROKER, whose session trades from that account. For STELLARBROKER and AQUARIUS, `destinationAddress` must **equal** it — both settle on the trader's own account. |
+| sourceAddress | string | conditional | The build signal — see below. Required for `signed_transaction` providers (1inch/Barter/Uniswap/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) since the tx needs a `from` / signer, and for STELLARBROKER, whose session trades from that account. For STELLARBROKER and AQUARIUS, `destinationAddress` must **equal** it — both settle on the trader's own account. |
+| networkFee | object | no | Your fee settings for the inbound tx — see below. The tx and the `inbound` fee line come back at that price |
 | rateId | string | no | P2P only. Lock a previously quoted rate |
 | floating | boolean | no | P2P only. Default `true` |
 | streamingInterval / streamingQuantity | number | no | THORChain/Mayachain only |
@@ -76,6 +77,22 @@ tx yourself (HD wallets that build a better tx — e.g. multi-UTXO sweeps). It i
 execution method: it only adds an optional `unsignedTx` to `transfer` and `thorchain_deposit` routes.
 `signed_transaction` routes always carry their tx because the swap *is* a contract call — there is no
 address-transfer alternative — so those providers require `sourceAddress`.
+
+**`networkFee` — sign what you receive.** If you choose your own gas price or fee rate, send it with the
+preview and the server builds the tx (and 1inch picks its route) at that price, so you never rewrite the
+tx before signing. One object, `kind` must match the **sell** chain (else 400):
+
+```jsonc
+{ "kind": "legacy",  "gasPrice": "25000000000" }                                   // EVM, wei (decimal or 0x hex)
+{ "kind": "eip1559", "maxFeePerGas": "30000000000", "maxPriorityFeePerGas": "1000000000" }  // EVM, wei
+{ "kind": "utxo",    "feeRate": 12 }                                               // BTC/LTC/BCH/DOGE/DASH/ZEC, sat/vB
+{ "kind": "solana",  "computeUnitPrice": 10000 }                                   // micro-lamports per CU
+```
+
+An `evm` tx then carries `gasPrice` (legacy) **or** `maxFeePerGas` + `maxPriorityFeePerGas` (eip1559),
+never both; a PSBT is built at your sat/vB; a Solana tx gets your compute-unit price. The `inbound` fee
+line is `gas × your price`. Omit it and the server prices the tx itself. Other chains have no client-side
+fee setting and accept none.
 
 ## `/commit` request
 
@@ -110,7 +127,7 @@ Each `providerErrors` entry is `{ provider, error, errorCode?, minimumAmount?, m
   "amlPolicy": "good",
   "accuracy": { "matched": 98, "total": 100, "avgDeviation": -0.4 },
   "amlErrors": [{ "message": "...", "level": 2 }],   // present only if the provider flagged AML issues
-  "approvalSpender": "0x1111…",                       // token sells needing an allowance — EVM ERC20 (1inch/Barter/Circle/LI.FI) or LI.FI Tron TRC20 (base58 spender) — approve before swapping
+  "approvalSpender": "0x1111…",                       // token sells needing an allowance — EVM ERC20 (1inch/Barter/Uniswap/Circle/LI.FI) or LI.FI Tron TRC20 (base58 spender) — approve before swapping
   "meta": { "thorchain": { "slippageBps": 12, "totalBps": 30 } }  // provider-namespaced extras (advanced); not needed to execute
 }
 ```
@@ -213,6 +230,7 @@ cross-chain — the source chain picks the shape and the bought asset lands on i
   "chain": "ETH",
   "transactions": [
     { "kind": "evm", "to": "0x1111…", "from": "0xYou", "value": "0x0", "data": "0x…", "gas": "0x…", "gasPrice": "0x…" }
+    // with networkFee.kind "eip1559": "maxFeePerGas" + "maxPriorityFeePerGas" instead of "gasPrice"
   ],
   "approval": { "token": "ETH.USDT-0x…", "spender": "0x1111…", "amount": "1000000" }  // only when selling a token
 }
@@ -309,11 +327,12 @@ deposit. The memo **is** the swap order — never omit it. `delivery.kind` tells
 `/commit` returns the **`uuid`** — the tracking handle. Store it and track by it on `/v3/track`; the
 server knows the provider and all swap details from the record.
 
-**Report your inbound tx hash before broadcasting**, in whichever call comes next after signing: for
-DEX routes (`thorchain_deposit`, `signed_transaction`, `stellar_broker`) you sign the preview's tx, so
-pass the hash to `/commit` as `inboundTxHash`; for P2P / NEAR you build the transfer after `commit`
-returns the address, so pass it to your first `/track`. Then broadcast. The swap moves to `signed`, and
-the server resolves it on its own even if you never call again.
+**Report your inbound tx hash before broadcasting.** For DEX routes (`thorchain_deposit`,
+`signed_transaction`, `stellar_broker`) you sign the preview's tx, so pass the hash to `/commit` as
+`inboundTxHash`; for P2P / NEAR you build the transfer after `commit` returns the address, so POST
+`{ uuid, inboundTxHash }` to `/v3/signed`. Then broadcast. The swap moves to `signed`, and the server
+resolves it on its own even if you never call again. `/v3/track` takes the `uuid` alone (a hash there is
+a 400).
 
 See [track.md](track.md) for the full request/response shapes.
 
@@ -322,7 +341,8 @@ See [track.md](track.md) for the full request/response shapes.
 - Compare with `/rate`, preview the winner with `/preview` (one `provider`, `destinationAddress` required), confirm, then `/commit` with the `previewToken`.
 - Preview is free — call it again whenever the user changes something. Commit once. To retry a commit, resend the **same token**; a fresh preview is a fresh intent and may create a second order.
 - If you `/commit` but never send funds, your fulfillment ratio drops and your rate limit is reduced.
-- Report your inbound tx hash before broadcasting: in `/commit` when you signed the preview's tx, otherwise in your first `/track`.
+- Report your inbound tx hash before broadcasting: in `/commit` when you signed the preview's tx, otherwise with `/v3/signed`. Never in `/track`.
+- Send the user's gas price / fee rate as `networkFee` on `/preview` and sign the returned tx as is — do not re-price it.
 - `signed_transaction` providers (1inch/Barter/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) and STELLARBROKER require `sourceAddress` on `/preview`.
 - STELLARBROKER and AQUARIUS require `destinationAddress == sourceAddress`; a Stellar classic buy also requires the recipient's trustline to exist first, or `/preview` returns `400`.
 - A route's `execution.method` is fixed by the provider+chain; it never depends on whether you sent `sourceAddress`. Sending `sourceAddress` only adds an `unsignedTx` to `transfer`/`thorchain_deposit` routes.

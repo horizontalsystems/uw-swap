@@ -13,34 +13,44 @@ Track by the **`uuid`** that `/v3/commit` returned:
 ```
 
 Store the `uuid`. The server tracks by it alone — it already knows the provider and every swap detail from
-the record, so you never build a request beyond the uuid (and, for DEX swaps, your broadcast tx hash).
+the record. The only other field is your inbound transaction's hash.
 
 ## Request
 
-**P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania) and NEAR** — the provider sees your deposit
-on its own, so the `uuid` alone is enough:
-
 ```json
-{ "uuid": "b5b1b8c1-…" }
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // inboundTxHash optional; null = no hash
 ```
 
-**DEX swaps (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX,
-StellarBroker, Axelar ITS)** — i.e. any route whose `execution.method` was `thorchain_deposit`,
-`signed_transaction`, or `stellar_broker`. You signed the preview's tx, so you had the hash at commit
-time and should have passed it to `/v3/commit` as `inboundTxHash` **before broadcasting**. If you did not,
-send it on the first `/track`:
+Hash conventions: EVM/UTXO/THORChain the tx hash; Solana the tx **signature**; Tron the tx id (`txID`);
+Stellar the tx hash (fee-bumped ⇒ the outer hash works).
 
-```json
-{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // Solana: the tx signature; Tron: the tx id (txID); Stellar: the tx hash (fee-bumped ⇒ the outer hash works)
+**Report the hash before broadcasting**, so the server can finish the swap even if you never call again:
+
+- **DEX swaps (THORChain, Mayachain, 1inch, Barter, Uniswap, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX,
+  StellarBroker, Axelar ITS)** — any route whose `execution.method` was `thorchain_deposit`,
+  `signed_transaction`, or `stellar_broker`. You signed the preview's tx, so pass the hash to `/v3/commit`
+  as `inboundTxHash`.
+- **P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania), NEAR, THORCHAIN_MEMOLESS** —
+  you build the transfer after `/commit` returns the deposit address. Once signed, before broadcasting,
+  send the hash with your first `/track` call, or with `/signed` if you want no status back:
+
+```
+POST https://swap-api.unstoppable.money/agent/v3/signed
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }
 ```
 
-**P2P / NEAR**: send the hash of the transfer you built on your first `/track`, before broadcasting it.
-It is not needed to track (the provider watches its own address) but it is kept on the record.
+`200 { uuid, status, hash }` (`signed` from `not_started`, otherwise the swap's current status); `404` for an
+unknown uuid; `503` if the swap changed while the hash was being applied — retry.
 
-The server remembers the hash for subsequent polls; the same hash again is a no-op, and a different one
-replaces it as long as nothing has been observed yet (a fee bump or speed-up), after which it is a `409`.
-Everything else the tracker needs was stored at commit, so the request never carries anything beyond
-`{ uuid, inboundTxHash? }`.
+**The hash may ride every poll, and is never refused.** The same hash again is a no-op. A **different** hash
+is your replaced transaction (fee bump, speed-up, RBF) and is tracked from then on — report it with the next
+poll. Only one of the original and the replacement can confirm; if the original does, report *its* hash
+again the same way. Once the server has observed the deposit under a hash, that hash is fixed and a later
+different one is only kept for reference.
+
+For P2P / NEAR the provider watches its own deposit address, so the hash is not needed to track the swap —
+but it moves the record to `signed` and is kept on it, so report it anyway. A DEX swap whose hash you did
+not send with `/commit` can report it here or on `/signed`.
 
 ## Response
 
@@ -67,8 +77,7 @@ Everything else the tracker needs was stored at commit, so the request never car
 
 Before anything has been observed on-chain or at the provider you get `200` with the record's own
 status instead of a tracker report — `{ "uuid", "status": "signed" | "not_started", "providers", "hash"?,
-"legs": [] }`. Keep polling. A `404` means the `uuid` is unknown; a `409` means you sent a different
-`inboundTxHash` than the one already on a swap whose deposit was already seen.
+"legs": [] }`. Keep polling. A `404` means the `uuid` is unknown.
 
 ## Statuses
 

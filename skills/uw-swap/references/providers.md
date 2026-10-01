@@ -15,7 +15,7 @@ CHAIN.SYMBOL-CONTRACT_ADDRESS
 | Ether | `ETH.ETH` |
 | Solana | `SOL.SOL` |
 | USDC on Ethereum | `ETH.USDC-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
-| Any ERC-20 (BARTER/ONEINCH/LI.FI) | `ETH.0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
+| Any ERC-20 (BARTER/ONEINCH/UNISWAP/LI.FI) | `ETH.0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
 | Any SPL token (JUPITER/LI.FI) | `SOL.EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` or the bare mint |
 | BNB native | `BSC.BNB` |
 | ARB native | `ARB.ETH` |
@@ -25,7 +25,7 @@ CHAIN.SYMBOL-CONTRACT_ADDRESS
 | Stellar native XLM | `XLM.XLM` |
 | Stellar classic asset (`CODE-ISSUER`) | `XLM.USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` |
 
-For BARTER and ONEINCH, use the contract address directly without a symbol — both assets must be on the same chain.
+For BARTER, ONEINCH and UNISWAP, use the contract address directly without a symbol — both assets must be on the same chain.
 
 For JUPITER, use a known identifier (`SOL.SOL`, `SOL.USDC-EPJF…`) or the SPL mint address — `SOL.<mint>` or a bare mint, no `chainId` needed. **Mints are case-sensitive base58 — pass them verbatim** (never upper/lowercase them). The wSOL mint (`So11111111111111111111111111111111111111112`) means native SOL.
 
@@ -76,6 +76,7 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 | MAYACHAIN | DEX | `excellent` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
 | ONEINCH | DEX aggregator | `excellent` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE |
 | BARTER | DEX aggregator | `excellent` | EVM same-chain |
+| UNISWAP | DEX (Uniswap V2/V3/V4 pools) | `excellent` | EVM same-chain: ETH, BSC, ARB, OP, AVAX, POL, BASE, Unichain, Monad, X Layer, Robinhood; fee taken in the buy asset |
 | JUPITER | DEX aggregator | `excellent` | Solana same-chain: SOL + SPL tokens |
 | LI.FI | Bridge / DEX aggregator | `excellent` | Cross-chain EVM + Solana + Tron (bridges + DEXs): ETH, BSC, POL, ARB, OP, BASE, AVAX, Solana, Tron. Sell and buy may be on different chains. No token list. (Bitcoin not supported.) |
 | CIRCLE | Bridge | `excellent` | USDC-only cross-chain bridge (Circle CCTPv2). EVM chains: ETH, BASE, ARB, OP, POL, AVAX, and more. Source and destination chains must differ. |
@@ -153,7 +154,7 @@ X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
 Returns supported tokens for the given provider.  
-**Note:** BARTER, ONEINCH, JUPITER, LI.FI, STELLARBROKER, SOROSWAP, AQUARIUS and STELLAR_DEX do not expose a token list — encode assets directly (contract address for EVM, mint for Solana, `XLM.CODE-GISSUER…` for Stellar). AXELAR_ITS does publish one.
+**Note:** BARTER, ONEINCH, UNISWAP, JUPITER, LI.FI, STELLARBROKER, SOROSWAP, AQUARIUS and STELLAR_DEX do not expose a token list — encode assets directly (contract address for EVM, mint for Solana, `XLM.CODE-GISSUER…` for Stellar). AXELAR_ITS does publish one.
 
 ## List Providers
 

@@ -47,20 +47,24 @@ Swap:
    no side effects. Returns a list of `routes` to compare.
 2. **Preview** — `POST /v3/preview` with the **one** provider you chose. Returns the committed route
    shape — amounts, fees, and for most providers the final `execution` — plus a `previewToken`.
-   Creates **nothing**: no order, no record. Call it on every refresh, fee edit or slippage change.
+   Creates **nothing**: no order, no record. Call it on every refresh, fee edit or slippage change,
+   and send the user's fee settings as `networkFee` so the transaction comes back priced as you will
+   sign it.
 3. **Commit** — when the user confirms, `POST /v3/commit { previewToken, inboundTxHash? }`. The only
    call with side effects: it creates the order (where there is one) and returns the tracking `uuid`
-   and, for `transfer` providers, the deposit address. Idempotent on the token.
+   and, for `transfer` providers, the deposit address. Idempotent on the token. If you already signed
+   the transaction the preview gave you, send its hash here.
 4. **Send funds** — do exactly what the route's `execution` block says (sign a tx, transfer to a
    deposit address, or deposit to a vault with a memo). Switch on `execution.method`. **Report the
-   signed transaction's hash before broadcasting** — in `commit` if you signed the preview's tx,
-   otherwise in your first `track` — so the server can finish tracking even if your app never calls
-   again.
-5. **Track** — POST `{ uuid, inboundTxHash? }` to `/v3/track` until the status is terminal
-   (`completed`, `refunded`, `failed`, or `expired`).
+   signed transaction's hash before broadcasting**: in `commit` if you signed the preview's tx;
+   otherwise, once you built the transfer to the deposit address `commit` returned, with
+   `POST /v3/signed { uuid, inboundTxHash }`. The server can then finish tracking even if your app
+   never calls again.
+5. **Track** — POST `{ uuid }` to `/v3/track` until the status is terminal (`completed`, `refunded`,
+   `failed`, or `expired`).
 
 ```
-/v3/rate ──compare──▶ /v3/preview (refresh freely) ──Swap pressed──▶ /v3/commit ──▶ send funds ──▶ /v3/track (poll)
+/v3/rate ──compare──▶ /v3/preview (refresh freely) ──Swap pressed──▶ /v3/commit ──▶ sign ──▶ hash to commit or /v3/signed ──▶ broadcast ──▶ /v3/track (poll)
 ```
 
 ---
@@ -82,8 +86,8 @@ CHAIN.SYMBOL-CONTRACT_ADDRESS
 | BNB (native) | `BSC.BNB` |
 | ARB (native gas) | `ARB.ETH` |
 | USDC on Ethereum | `ETH.USDC-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
-| ERC-20 for BARTER / ONEINCH / LI.FI (chain-prefixed) | `ETH.0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
-| ERC-20 for BARTER / ONEINCH (bare address) | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` + `chainId` |
+| ERC-20 for BARTER / ONEINCH / UNISWAP / LI.FI (chain-prefixed) | `ETH.0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
+| ERC-20 for BARTER / ONEINCH / UNISWAP (bare address) | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` + `chainId` |
 | SPL token for JUPITER / LI.FI (chain-prefixed mint) | `SOL.EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
 | SPL token for JUPITER (bare mint) | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
 | Native gas for LI.FI (chain-prefixed sentinel) | `ETH.0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` |
@@ -92,7 +96,7 @@ CHAIN.SYMBOL-CONTRACT_ADDRESS
 | Stellar native XLM | `XLM.XLM` |
 | Stellar classic asset (`CODE-ISSUER`) | `XLM.USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` |
 
-For **BARTER** and **ONEINCH** (same-chain EVM aggregators), `sellAsset` / `buyAsset` may be given as:
+For **BARTER**, **ONEINCH** and **UNISWAP** (same-chain EVM DEXes), `sellAsset` / `buyAsset` may be given as:
 - a chain-prefixed contract address (`ETH.0x…`), or
 - a **bare contract address** (`0x…`) with **no chain prefix** — in which case you must also send the
   request's `chainId` field (e.g. `"1"` for Ethereum) so the server knows the chain. For the native gas
@@ -116,7 +120,7 @@ is needed**. Encode each side by its chain:
 LI.FI keeps **no token list** — pass any supported token directly; a pair LI.FI can't route just
 returns no route. (Bitcoin is **not** supported by LI.FI here.)
 
-For **BARTER**, **ONEINCH**, and **JUPITER**, both assets must be on the **same chain**. **LI.FI** may
+For **BARTER**, **ONEINCH**, **UNISWAP**, and **JUPITER**, both assets must be on the **same chain**. **LI.FI** may
 be cross-chain.
 
 ### Stellar assets
@@ -225,7 +229,7 @@ Each `Route` (from `/rate`) carries **economics only** — no `execution`, no `p
   "amlPolicy": "good",
   "accuracy": { "matched": 98, "total": 100, "avgDeviation": -0.4 },
   "amlErrors": [{ "message": "...", "level": 2 }],   // only if the provider flagged AML issues
-  "approvalSpender": "0x1111…",                       // token sells needing an allowance — EVM ERC20 (1inch/Barter/Circle/LI.FI) or LI.FI Tron TRC20 (base58 spender) — approve before swapping
+  "approvalSpender": "0x1111…",                       // token sells needing an allowance — EVM ERC20 (1inch/Barter/Uniswap/Circle/LI.FI) or LI.FI Tron TRC20 (base58 spender) — approve before swapping
   "meta": { "thorchain": { "slippageBps": 12, "totalBps": 30 } }   // provider-namespaced extras (advanced)
 }
 ```
@@ -233,7 +237,7 @@ Each `Route` (from `/rate`) carries **economics only** — no `execution`, no `p
 **Pick the route with the best `expectedBuyAmount`** — it is already net of every fee.
 
 `minBuyAmount` (`string | null`) is the **guaranteed minimum** the swap can deliver, present only when
-something actually enforces it: the on-chain minReturn (1inch/Barter), Jupiter's on-chain slippage
+something actually enforces it: the on-chain minReturn (1inch/Barter/Uniswap), Jupiter's on-chain slippage
 threshold, LI.FI's on-chain minimum-received (the tx reverts below it), the on-chain floor built into
 the Stellar transaction (Soroswap/Aquarius/Stellar DEX), the 1:1 bridge amount (Axelar ITS), the
 protocol memo limit (THORChain/Mayachain), the intent minimum (NEAR), or a locked fixed-rate P2P quote.
@@ -318,7 +322,8 @@ no `uuid`. Call it as often as the screen needs.
 | `provider` | string | yes | The **single** provider to create the order with |
 | `destinationAddress` | string | yes | Where the bought funds are sent |
 | `refundAddress` | string | no | Refund address on failure (required by most P2P providers) |
-| `sourceAddress` | string | conditional | The build signal — see below. **Required** for `signed_transaction` providers (1inch / Barter / Circle / Jupiter / LI.FI / Soroswap / Aquarius / Stellar DEX / Axelar ITS — i.e. a provider whose `executionType` is `signed_transaction`, from [§10](#10-supporting-endpoints)) since the tx needs a `from` / signer, and for **STELLARBROKER** (`stellar_broker`), whose session trades from that account. |
+| `sourceAddress` | string | conditional | The build signal — see below. **Required** for `signed_transaction` providers (1inch / Barter / Uniswap / Circle / Jupiter / LI.FI / Soroswap / Aquarius / Stellar DEX / Axelar ITS — i.e. a provider whose `executionType` is `signed_transaction`, from [§10](#10-supporting-endpoints)) since the tx needs a `from` / signer, and for **STELLARBROKER** (`stellar_broker`), whose session trades from that account. |
+| `networkFee` | object | no | Your fee settings for the inbound transaction, so the tx and the `inbound` fee line come back at the price you will sign with — see [Network fee](#network-fee--networkfee). |
 | `rateId` | string | no | P2P only. Lock a previously quoted `rate.id` from `/rate` (do it before `expiresAt`). |
 | `floating` | boolean | no | P2P only. Default `true` |
 | `streamingInterval` / `streamingQuantity` | number | no | THORChain / Mayachain only |
@@ -332,6 +337,40 @@ swap *is* a contract call), so those providers require `sourceAddress`.
 
 For **STELLARBROKER** and **AQUARIUS**, `destinationAddress` must equal `sourceAddress` — both settle
 on the trader's own account and reject a third-party recipient with a `400`.
+
+### Network fee — `networkFee`
+
+A wallet lets the user choose the gas price or fee rate. Send it with the preview and the server builds
+the transaction (and 1inch picks its route) at that price, so you sign the tx **exactly as returned**.
+One object, discriminated by `kind`, which must match the **sell** asset's chain (otherwise `400`):
+
+| `kind` | Fields | Chains | Units |
+|---|---|---|---|
+| `legacy` | `gasPrice` | EVM | wei, decimal or `0x` hex string |
+| `eip1559` | `maxFeePerGas`, `maxPriorityFeePerGas` | EVM | wei, decimal or `0x` hex string |
+| `utxo` | `feeRate` | Bitcoin, Litecoin, Bitcoin Cash, Dogecoin, Dash, Zcash | sat/vB, integer |
+| `solana` | `computeUnitPrice` | Solana | micro-lamports per compute unit, integer |
+
+```jsonc
+"networkFee": { "kind": "eip1559", "maxFeePerGas": "30000000000", "maxPriorityFeePerGas": "1000000000" }
+"networkFee": { "kind": "legacy", "gasPrice": "0x6fc23ac00" }
+"networkFee": { "kind": "utxo", "feeRate": 12 }
+"networkFee": { "kind": "solana", "computeUnitPrice": 10000 }
+```
+
+What it changes:
+
+- An `evm` transaction carries `gasPrice` (`legacy`) **or** the `maxFeePerGas` / `maxPriorityFeePerGas`
+  pair (`eip1559`) — never both. A PSBT is built at your sat/vB. A Solana transaction gets your
+  compute-unit price (Jupiter's own is replaced).
+- 1inch is asked for its route **at your price** — it routes by gas cost, so its calldata depends on it.
+- The route's `inbound` fee line is `gas × your price`.
+- On Arc a price below the chain's 20 Gwei minimum is raised to it (a lower tx is silently discarded by
+  the network); the returned tx shows the raised value.
+- Cosmos, THORChain, XRP, TON, Tron, NEAR and Stellar have no client-side fee setting and accept none.
+
+Omit it and the server prices the transaction itself, as `/v2/swap` did. The settings travel inside the
+`previewToken`, so `commit` builds the order's transaction at the same price.
 
 ### Response
 
@@ -417,7 +456,7 @@ A route you act on — the `/preview` for most providers, the `/commit` answer f
 providers — carries exactly one `execution` object. **Switch on `execution.method`** and
 handle only that branch; nothing else applies.
 
-### `signed_transaction` — 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, Axelar ITS
+### `signed_transaction` — 1inch, Barter, Uniswap, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, Axelar ITS
 
 The swap is a contract call. **Sign and broadcast the provided transaction(s) verbatim.** There is no
 deposit address; do not construct your own tx. `chain` is the **source** chain and decides the tx
@@ -427,12 +466,13 @@ ITS are cross-chain — the source chain (the `sellAsset`'s chain) picks the sha
 on its own chain automatically.
 
 ```jsonc
-// EVM source (1inch / Barter / Circle / LI.FI on an EVM chain)
+// EVM source (1inch / Barter / Uniswap / Circle / LI.FI on an EVM chain)
 {
   "method": "signed_transaction",
   "chain": "ETH",
   "transactions": [
     { "kind": "evm", "to": "0x1111…", "from": "0xYou", "value": "0x0", "data": "0x…", "gas": "0x…", "gasPrice": "0x…" }
+    // priced as your `networkFee` asked: `gasPrice` (legacy), or `maxFeePerGas` + `maxPriorityFeePerGas` instead (eip1559)
   ],
   "approval": { "token": "ETH.USDT-0x…", "spender": "0x1111…", "amount": "1000000" }  // only when selling a token
 }
@@ -623,26 +663,22 @@ deposit. The memo **is** the swap order — never omit it. `delivery.kind` tells
 ## 8. `POST /v3/track` — track a swap
 
 Track by the **`uuid`** that `/commit` returned. The server tracks by it alone — it already knows the
-provider and every swap detail from the record; you only ever send the `uuid` and, once, your inbound
-tx hash.
+provider and every swap detail from the record; the body is the `uuid` and nothing else.
 
 ### Request
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `uuid` | string | yes | The `uuid` returned by `/commit` |
-| `inboundTxHash` | string | conditional | The hash of your signed inbound transaction (Solana: the tx **signature**; Tron: the tx id; Stellar: the transaction hash — if you fee-bumped, the **outer** hash works, Horizon resolves both). Report it **before broadcasting**, in whichever call comes next after signing: in `/commit` when you signed the preview's tx (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, StellarBroker, Axelar ITS), otherwise here on your first `/track`. For P2P / NEAR it is kept for reference only — the provider watches its own deposit address. |
 
 ```json
-{ "uuid": "b5b1b8c1-…" }                                   // once the hash is on the record
-{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // first track after signing, if not sent with commit
+{ "uuid": "b5b1b8c1-…" }
 ```
 
-The server remembers the hash for subsequent polls. The same hash again is a no-op; a **different**
-hash while the record is still `not_started` / `signed` **replaces** the old one (a fee bump or
-speed-up changes the tx id), and is a `409` once a deposit was seen.
+Do not send the inbound tx hash here — it is a `400`. The hash goes to `/v3/commit` (when you signed the
+preview's transaction) or to `/v3/signed` (below).
 
-### Report the hash before broadcasting
+### `POST /v3/signed` — report the hash before broadcasting
 
 **Sign, report the hash, then broadcast.** If the app dies between the broadcast and its next call,
 the server already knows which transaction to look for and resolves the swap on its own — THORChain
@@ -651,8 +687,27 @@ and DEX swaps are identified by that hash, P2P / NEAR swaps by their order. The 
 
 | Provider | You sign… | Report the hash in |
 |---|---|---|
-| THORChain, Mayachain, 1inch, Barter, Jupiter, LI.FI, Circle, Axelar ITS, StellarBroker, Soroswap, Aquarius, Stellar DEX | the transaction from the preview | `/v3/commit` |
-| LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania, NEAR (all rails), THORCHAIN_MEMOLESS | the transfer you build once `commit` returns the address | your first `/v3/track` |
+| THORChain, Mayachain, 1inch, Barter, Jupiter, LI.FI, Circle, Axelar ITS, StellarBroker, Soroswap, Aquarius, Stellar DEX | the transaction from the preview | `/v3/commit` (`inboundTxHash`) |
+| LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania, NEAR (all rails), THORCHAIN_MEMOLESS | the transfer you build once `commit` returns the deposit address | `POST /v3/signed` |
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `uuid` | string | yes | The `uuid` returned by `/commit` |
+| `inboundTxHash` | string | yes | The hash of your signed inbound transaction (Solana: the tx **signature**; Tron: the tx id; Stellar: the transaction hash — if you fee-bumped, the **outer** hash works, Horizon resolves both) |
+
+```json
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }
+```
+
+| HTTP | Response |
+|---|---|
+| 200 | `{ "uuid", "status": "signed", "hash" }` — the hash is on the record. The same hash again is a no-op `200`. A **different** hash while nothing has been observed yet **replaces** the old one (a fee bump or speed-up changes the tx id). |
+| 404 | Unknown `uuid`. |
+| 409 | A different hash than the one on a swap whose deposit was already seen, or a swap that can no longer be signed (`failed`, `expired`, terminal). The record's `status` is in the body. |
+
+For P2P / NEAR the hash is kept for reference — the provider watches its own deposit address — but it
+still moves the record to `signed`, so report it anyway. A hash-identified swap (the first row) also
+accepts it here if you did not send it with `commit`.
 
 ### Response
 
@@ -682,7 +737,6 @@ legs over time.
 - Before anything is observable on-chain or at the provider, the body is the record's own state
   instead of a tracker report: `{ "uuid", "status": "signed" | "not_started", "providers", "hash"?, "legs": [] }`.
   Keep polling.
-- `409` — you sent a different `inboundTxHash` than the one on a swap whose deposit was already seen.
 - `404` — the `uuid` is unknown.
 
 ### Statuses
@@ -813,7 +867,7 @@ wallets run natively. **Ignore `quotes: false` entries**; this API cannot quote 
 ### `GET /v3/tokens?provider=THORCHAIN`
 
 Returns the supported token list for a provider. Supports `ETag` / `If-None-Match` (304). **BARTER,
-ONEINCH, JUPITER, LI.FI, STELLARBROKER, SOROSWAP, AQUARIUS, and STELLAR_DEX do not expose a token
+ONEINCH, UNISWAP, JUPITER, LI.FI, STELLARBROKER, SOROSWAP, AQUARIUS, and STELLAR_DEX do not expose a token
 list** — encode assets directly (contract address for EVM, mint for Solana, `XLM.CODE-GISSUER…` for
 Stellar; see [§3](#3-asset-id-format)). AXELAR_ITS does publish one (its four bridgeable rows).
 
@@ -831,6 +885,7 @@ Returns the current THORChain/Mayachain inbound (vault) addresses.
 | MAYACHAIN | DEX | `excellent` | BTC, ETH, DASH, KUJI, THOR, ARB, and more |
 | ONEINCH | DEX aggregator | `excellent` | Same-chain EVM: ETH, BSC, ARB, OP, AVAX, POL, BASE |
 | BARTER | DEX aggregator | `excellent` | Same-chain EVM |
+| UNISWAP | DEX (Uniswap V2/V3/V4 pools, via the Uniswap Trading API; v3 only) | `excellent` | Same-chain EVM: ETH, BSC, ARB, OP, AVAX, POL, BASE, Unichain, Monad, X Layer, Robinhood. Fee taken in the **buy** asset |
 | JUPITER | DEX aggregator | `excellent` | Same-chain Solana |
 | LI.FI | Bridge / DEX aggregator | `excellent` | Cross-chain EVM + Solana (bridges + DEXs). Sell and buy may be on different chains. No token list. |
 | CIRCLE | Bridge | `excellent` | USDC-only cross-chain bridge (CCTPv2). Source and destination chains must differ. |

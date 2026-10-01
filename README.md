@@ -36,4 +36,4 @@ curl -X POST https://swap-api.unstoppable.money/agent/register \
 
 ## Supported Providers
 
-THORChain · Mayachain · 1Inch · Barter · Jupiter · LI.FI · Circle · NEAR · StellarBroker · Soroswap · Aquarius · Stellar DEX · Axelar ITS · LetsExchange · StealthEx · Quickex · Swapuz · Exolix · CCE · PegasusSwap
+THORChain · Mayachain · 1Inch · Barter · Jupiter · LI.FI · Circle · NEAR · StellarBroker · Soroswap · Aquarius · Stellar DEX · Axelar ITS · LetsExchange · StealthEx · Quickex · Swapuz · Exolix · CCE · PegasusSwap · Lizex · Bitania

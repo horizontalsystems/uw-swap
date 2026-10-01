@@ -1,18 +1,15 @@
 # Tracking Swaps
 
 ```
-POST https://swap-api.unstoppable.money/agent/v2/track
+POST https://swap-api.unstoppable.money/agent/v3/track
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
-Track by the committed route's top-level **`uuid`**. The `/v2/swap` response gives you:
+Track by the **`uuid`** that `/v3/commit` returned:
 
 ```json
-{
-  "providers": ["THORCHAIN"], …, "execution": { … },
-  "uuid": "b5b1b8c1-4a18-42a0-ab84-374d36f68f17"
-}
+{ "status": "ok", "uuid": "b5b1b8c1-4a18-42a0-ab84-374d36f68f17", "sellAmount": "0.1", … }
 ```
 
 Store the `uuid`. The server tracks by it alone — it already knows the provider and every swap detail from
@@ -20,7 +17,7 @@ the record, so you never build a request beyond the uuid (and, for DEX swaps, yo
 
 ## Request
 
-**P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE) and NEAR** — the provider sees your deposit
+**P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania) and NEAR** — the provider sees your deposit
 on its own, so the `uuid` alone is enough:
 
 ```json
@@ -29,15 +26,21 @@ on its own, so the `uuid` alone is enough:
 
 **DEX swaps (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX,
 StellarBroker, Axelar ITS)** — i.e. any route whose `execution.method` was `thorchain_deposit`,
-`signed_transaction`, or `stellar_broker`. After you broadcast the tx, send its hash as `inboundTxHash`:
+`signed_transaction`, or `stellar_broker`. You signed the preview's tx, so you had the hash at commit
+time and should have passed it to `/v3/commit` as `inboundTxHash` **before broadcasting**. If you did not,
+send it on the first `/track`:
 
 ```json
 { "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // Solana: the tx signature; Tron: the tx id (txID); Stellar: the tx hash (fee-bumped ⇒ the outer hash works)
 ```
 
-That's the whole flow: **store `uuid` → (DEX) add `inboundTxHash` → POST.** The server remembers the hash
-for subsequent polls. Everything else the tracker needs was stored when the swap was committed, so the
-request never carries anything beyond `{ uuid, inboundTxHash? }`.
+**P2P / NEAR**: send the hash of the transfer you built on your first `/track`, before broadcasting it.
+It is not needed to track (the provider watches its own address) but it is kept on the record.
+
+The server remembers the hash for subsequent polls; the same hash again is a no-op, and a different one
+replaces it as long as nothing has been observed yet (a fee bump or speed-up), after which it is a `409`.
+Everything else the tracker needs was stored at commit, so the request never carries anything beyond
+`{ uuid, inboundTxHash? }`.
 
 ## Response
 
@@ -62,15 +65,17 @@ request never carries anything beyond `{ uuid, inboundTxHash? }`.
 }
 ```
 
-If the swap is recorded but not yet trackable (e.g. a DEX swap you haven't sent `inboundTxHash`
-for), you get `409` with `{ "message": "Swap not trackable yet", "uuid": "…" }` — send the hash, then
-poll again. A `404` means the `uuid` is unknown.
+Before anything has been observed on-chain or at the provider you get `200` with the record's own
+status instead of a tracker report — `{ "uuid", "status": "signed" | "not_started", "providers", "hash"?,
+"legs": [] }`. Keep polling. A `404` means the `uuid` is unknown; a `409` means you sent a different
+`inboundTxHash` than the one already on a swap whose deposit was already seen.
 
 ## Statuses
 
 | Status | Meaning |
 |---|---|
-| `not_started` | Funds not yet received |
+| `not_started` | Order created, no inbound hash reported, funds not yet received |
+| `signed` | You reported the inbound tx hash; nothing observed yet |
 | `pending` | Funds received, waiting to process |
 | `swapping` | Swap in progress |
 | `action_required` | Funds reached the provider but the swap is stuck and won't auto-resolve. The user must contact the provider directly to request a manual refund or unblock. See "Action required" below. |
@@ -99,4 +104,4 @@ When `status === "action_required"`, the response includes `meta.pauseReason` de
 | `provider_error` | Provider-side error after a deposit (catch-all) |
 | `manual_review` | Provider's generic "needs human attention" state |
 
-To help the user recover funds, surface the provider's contact info from `GET /v2/providers` (the `contacts` field — `{ email?, telegram?, ... }`) alongside `meta.pauseReason`. The user reaches out to the provider directly; the provider then completes or refunds the swap, after which the next poll will report a terminal status.
+To help the user recover funds, surface the provider's contact info from `GET /v3/providers` (the `contacts` field — `{ email?, telegram?, ... }`) alongside `meta.pauseReason`. The user reaches out to the provider directly; the provider then completes or refunds the swap, after which the next poll will report a terminal status.

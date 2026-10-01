@@ -1,18 +1,19 @@
 # USwap Partner API
 
-Integration guide for partners (affiliates) embedding the USwap cross-chain swap aggregator.
+Integration guide for partners (affiliates) embedding the USwap cross-chain swap aggregator. This is
+the **v3** contract: pricing, a free confirmation-screen preview, and a single Swap-button commit.
 
 USwap aggregates quotes across THORChain, Mayachain, 1inch, Barter, Jupiter, LI.FI, NEAR, Circle, four
-Stellar-native venues (StellarBroker, Soroswap, Aquarius, Stellar DEX), the Axelar ITS bridge, and six
-P2P exchanges (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE), and gives you one contract to
-compare routes, execute a swap with the provider you pick, and track it to completion.
+Stellar-native venues (StellarBroker, Soroswap, Aquarius, Stellar DEX), the Axelar ITS bridge, and eight
+P2P exchanges (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania), and gives you one
+contract to compare routes, execute a swap with the provider you pick, and track it to completion.
 
 - **Base URL:** `https://swap-api.unstoppable.money`
 - **Auth:** every request needs an `X-API-Key` header
 - **Content type:** `application/json` for all `POST` bodies
 
 ```
-POST https://swap-api.unstoppable.money/v2/rate
+POST https://swap-api.unstoppable.money/v3/rate
 Content-Type: application/json
 X-API-Key: <your-api-key>
 ```
@@ -24,7 +25,7 @@ X-API-Key: <your-api-key>
 Register as a partner at **https://swap.unstoppable.money/affiliate**. You receive an API key bound to
 your partner account, where you also set your affiliate revenue share. The key is passed on every
 request via the `X-API-Key` header. Keep it server-side — it identifies you, carries your fee
-configuration, and accrues your affiliate revenue share (see [§8](#8-affiliate-revenue-share)).
+configuration, and accrues your affiliate revenue share (see [§9](#9-affiliate-revenue-share)).
 
 New accounts may require approval before they go active; until then requests return `403`.
 
@@ -39,19 +40,27 @@ Auth responses:
 
 ## 2. The swap flow
 
-USwap separates **pricing** from **committing** so you can compare freely without creating orders:
+USwap separates **pricing** from **committing**, and on v3 nothing is created until the user presses
+Swap:
 
-1. **Rate** — `POST /v2/rate` prices the swap across every eligible provider. Read-only, no order,
+1. **Rate** — `POST /v3/rate` prices the swap across every eligible provider. Read-only, no order,
    no side effects. Returns a list of `routes` to compare.
-2. **Swap** — `POST /v2/swap` commits against the **one** provider you chose. This creates the real
-   order and returns a single executable route carrying an `execution` block and a top-level `uuid`.
-3. **Send funds** — do exactly what the route's `execution` block says (sign a tx, transfer to a
-   deposit address, or deposit to a vault with a memo). Switch on `execution.method`.
-4. **Track** — store the route's `uuid` and POST `{ uuid }` to `/v2/track` until the status is
-   terminal (`completed`, `refunded`, `failed`, or `expired`); for DEX swaps also send your broadcast tx hash.
+2. **Preview** — `POST /v3/preview` with the **one** provider you chose. Returns the committed route
+   shape — amounts, fees, and for most providers the final `execution` — plus a `previewToken`.
+   Creates **nothing**: no order, no record. Call it on every refresh, fee edit or slippage change.
+3. **Commit** — when the user confirms, `POST /v3/commit { previewToken, inboundTxHash? }`. The only
+   call with side effects: it creates the order (where there is one) and returns the tracking `uuid`
+   and, for `transfer` providers, the deposit address. Idempotent on the token.
+4. **Send funds** — do exactly what the route's `execution` block says (sign a tx, transfer to a
+   deposit address, or deposit to a vault with a memo). Switch on `execution.method`. **Report the
+   signed transaction's hash before broadcasting** — in `commit` if you signed the preview's tx,
+   otherwise in your first `track` — so the server can finish tracking even if your app never calls
+   again.
+5. **Track** — POST `{ uuid, inboundTxHash? }` to `/v3/track` until the status is terminal
+   (`completed`, `refunded`, `failed`, or `expired`).
 
 ```
-/v2/rate  ──compare──▶  pick best route  ──▶  /v2/swap (one provider)  ──▶  send funds  ──▶  /v2/track (poll)
+/v3/rate ──compare──▶ /v3/preview (refresh freely) ──Swap pressed──▶ /v3/commit ──▶ send funds ──▶ /v3/track (poll)
 ```
 
 ---
@@ -124,14 +133,14 @@ assets in the same `CHAIN.SYMBOL-CONTRACT` shape, where the "contract" is the is
 the issuer defines it. The issuer is StrKey (uppercase-only), so its case doesn't matter. Classic
 assets are always **7 decimals**. **Soroban-only tokens (`C…` contract ids) are not supported** — only
 native XLM and classic assets; where a venue needs a contract id, the server derives the asset's SAC
-itself. There is **no token list** for these providers (see [§9](#9-supporting-endpoints)).
+itself. There is **no token list** for these providers (see [§10](#10-supporting-endpoints)).
 
 Two of them settle on the trader's own account and **cannot pay a third party** — for **STELLARBROKER**
 and **AQUARIUS**, `destinationAddress` must equal `sourceAddress` (anything else is a `400`).
 **SOROSWAP** and **STELLAR_DEX** support a distinct `destinationAddress`.
 
 Buying a classic asset requires the **recipient to already hold that asset's trustline**, and the
-destination account must already exist — the server pre-flights both on `/v2/swap` and fails with a
+destination account must already exist — the server pre-flights both on `/v3/commit` and fails with a
 `400` rather than letting the transaction revert on-chain. Create the trustline before committing.
 
 ### Axelar ITS (cross-chain, same token)
@@ -173,7 +182,7 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 
 ---
 
-## 4. `POST /v2/rate` — compare routes
+## 4. `POST /v3/rate` — compare routes
 
 Read-only. Prices the swap across all eligible providers and returns `routes` to compare. Creates
 nothing. No addresses are needed because nothing is built yet.
@@ -184,7 +193,8 @@ nothing. No addresses are needed because nothing is built yet.
 |---|---|---|---|
 | `sellAsset` | string | yes | Asset to sell (see [§3](#3-asset-id-format)) |
 | `buyAsset` | string | yes | Asset to buy |
-| `sellAmount` | string | yes | Decimal string, e.g. `"0.1"` |
+| `sellAmount` | string | conditional | Decimal string, e.g. `"0.1"`. **Exactly one** of `sellAmount` / `buyAmount` — see [Exact output](#exact-output--buyamount). |
+| `buyAmount` | string | conditional | Decimal string. Quote by **exact output** instead: "deliver exactly this much". NEAR only. |
 | `slippage` | number | yes | Tolerance, `0`–`99` |
 | `chainId` | string | conditional | Numeric EVM chain id as a string (`"1"` Ethereum, `"56"` BSC, `"137"` Polygon, `"42161"` Arbitrum, `"10"` Optimism, `"8453"` Base, `"43114"` Avalanche). **Required** when a BARTER/ONEINCH asset is a bare contract address (no chain prefix). |
 | `providers` | string[] | no | Narrow the fan-out to specific providers |
@@ -197,8 +207,8 @@ nothing. No addresses are needed because nothing is built yet.
 { "routes": [ Route, ... ], "providerErrors": [ { "provider": "QUICKEX", "error": "...", "errorCode": "amountOutOfRange", "minimumAmount": 0.01, "maximumAmount": 5 } ] }
 ```
 
-Each `Route` (from `/rate`) carries **economics only** — no `execution`, no `uuid` (those appear
-only after you commit with `/swap`):
+Each `Route` (from `/rate`) carries **economics only** — no `execution`, no `previewToken`, no `uuid`
+(the first two appear on `/preview`, the `uuid` on `/commit`):
 
 ```jsonc
 {
@@ -229,14 +239,52 @@ the Stellar transaction (Soroswap/Aquarius/Stellar DEX), the 1:1 bridge amount (
 protocol memo limit (THORChain/Mayachain), the intent minimum (NEAR), or a locked fixed-rate P2P quote.
 
 It is `null` when nothing enforces the number:
-- **Floating-rate P2P routes** (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Pegasus) —
-  `expectedBuyAmount` is an **estimate re-priced when the deposit arrives**.
+- **Floating-rate P2P routes** (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Pegasus, Lizex,
+  Bitania) — `expectedBuyAmount` is an **estimate re-priced when the deposit arrives**.
 - **STELLARBROKER** — the broker re-quotes live inside the execution session, so the committed numbers
   are a snapshot, not a promise; the session's own `slippageTolerance` is the only bound.
 - **CIRCLE** — the minted output is the burn minus a forwarder fee whose tier can shift.
 
 Surface that distinction to users: a `null` floor means the received amount can differ from the quote
 in either direction.
+
+### Exact output — `buyAmount`
+
+Normally you send `sellAmount` and the route's `expectedBuyAmount` is what you get. Send `buyAmount`
+instead to ask the opposite question: **"how much do I need to send to receive exactly this?"** Useful
+when the destination amount is the requirement — paying an invoice, or topping a balance up to a
+round number.
+
+Send **exactly one** of the two. Neither or both is a `400`.
+
+Only **NEAR** can price backwards. Every other provider declines the request with
+`errorCode: "routeNotFound"` and `"Provider cannot quote an exact output amount; use sellAmount
+instead"` — so an unfiltered `/v3/rate` returns those in `providerErrors` and only the NEAR route in
+`routes`. Send `providers: ["NEAR"]` to avoid the noise.
+
+The route reads the same, with the two amount fields swapping roles:
+
+```jsonc
+{
+  "providers": ["NEAR"],
+  "sellAsset": "ETH.ETH", "sellAmount": "0.171720773014045515",  // <- the ANSWER: send this
+  "buyAsset": "BTC.BTC",  "expectedBuyAmount": "0.005",          // <- exactly what you asked for
+  "minBuyAmount": "0.005",                                       // enforced, equal to the request
+  "meta": { "near": { "exactOutput": true, "minSellAmount": "0.170004…" } }
+}
+```
+
+- **`sellAmount` is the quote's answer, not your input** — the amount to transfer, and what
+  `execution.amount` will carry once you commit.
+- **It includes a slippage buffer** (~1% at `slippage: 1`) over `meta.near.minSellAmount`. Any part of
+  it the swap doesn't need is **refunded** to your `refundAddress` after settlement. Don't present the
+  gap between the two as a fee — it is a deposit ceiling, not a price.
+- **Send at least `minSellAmount`.** A deposit below that floor is refunded whole and no swap happens.
+- **`minBuyAmount` equals `expectedBuyAmount`** here — the output is contractual, so this is a real
+  enforced floor rather than an estimate.
+
+Prices are otherwise identical to the exact-input path: quoting `sellAmount` forward from the
+returned amount gives back the target plus the same buffer.
 
 ### Fee types
 
@@ -248,27 +296,29 @@ breakdown is useful for showing costs to your user:
 | `service` | The aggregator's service fee. |
 | `liquidity` | Provider / protocol costs: the underlying provider's cut and any relayer/forwarder fee. |
 | `inbound` / `outbound` | Source / destination chain network (gas) fees. |
-| `affiliate` | Your partner revenue share, carved from our service fee (see [§8](#8-affiliate-revenue-share)). Present only when your account has an affiliate share configured. |
+| `affiliate` | Your partner revenue share, carved from our service fee (see [§9](#9-affiliate-revenue-share)). Present only when your account has an affiliate share configured. |
 
 Each entry is denominated in its own `asset` and carries the `protocol` (provider) and `chain` it
 applies to.
 
 ---
 
-## 5. `POST /v2/swap` — commit with one provider
+## 5. `POST /v3/preview` — the confirmation screen
 
-Commits a quote against the **single** provider you name. Creates the real order and a swap record,
-and returns one executable route with `execution` + a top-level `uuid` populated.
+Returns the route you would commit with the **single** provider you name, in the committed shape —
+the same `Route` as `/rate` plus, for every provider except the `transfer` ones, the final `execution`
+— and a **`previewToken`**. **No side effects:** nothing is created at the provider, no swap record,
+no `uuid`. Call it as often as the screen needs.
 
 ### Request
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `sellAsset` / `buyAsset` / `sellAmount` / `slippage` / `chainId` | | yes / conditional | Same as `/rate` (`chainId` required for bare BARTER/ONEINCH addresses) |
+| `sellAsset` / `buyAsset` / `sellAmount` / `buyAmount` / `slippage` / `chainId` | | yes / conditional | Same as `/rate` — including **exactly one** of `sellAmount` / `buyAmount` (see [Exact output](#exact-output--buyamount)); `chainId` required for bare BARTER/ONEINCH addresses |
 | `provider` | string | yes | The **single** provider to create the order with |
 | `destinationAddress` | string | yes | Where the bought funds are sent |
 | `refundAddress` | string | no | Refund address on failure (required by most P2P providers) |
-| `sourceAddress` | string | conditional | The build signal — see below. **Required** for `signed_transaction` providers (1inch / Barter / Circle / Jupiter / LI.FI / Soroswap / Aquarius / Stellar DEX / Axelar ITS — i.e. a provider whose `executionType` is `signed_transaction`, from [§9](#9-supporting-endpoints)) since the tx needs a `from` / signer, and for **STELLARBROKER** (`stellar_broker`), whose session trades from that account. |
+| `sourceAddress` | string | conditional | The build signal — see below. **Required** for `signed_transaction` providers (1inch / Barter / Circle / Jupiter / LI.FI / Soroswap / Aquarius / Stellar DEX / Axelar ITS — i.e. a provider whose `executionType` is `signed_transaction`, from [§10](#10-supporting-endpoints)) since the tx needs a `from` / signer, and for **STELLARBROKER** (`stellar_broker`), whose session trades from that account. |
 | `rateId` | string | no | P2P only. Lock a previously quoted `rate.id` from `/rate` (do it before `expiresAt`). |
 | `floating` | boolean | no | P2P only. Default `true` |
 | `streamingInterval` / `streamingQuantity` | number | no | THORChain / Mayachain only |
@@ -285,11 +335,21 @@ on the trader's own account and reject a third-party recipient with a `400`.
 
 ### Response
 
-`/swap` returns the **executable route directly** (no `{ routes }` wrapper) — the same `Route` shape
-as `/rate`, now with an `execution` block and a top-level `uuid` tracking handle:
+The route directly (no `{ routes }` wrapper), with two things a `/rate` route does not have:
+
+- **`previewToken`** (string) — opaque and encrypted, bound to your API key, valid for about 10
+  minutes (less when the route's own `expiresAt` comes first). Keep it in memory; it is the only input
+  `commit` needs.
+- **`execution`** — present and final for `thorchain_deposit`, `signed_transaction` and
+  `stellar_broker` providers: the transaction you get here is the one you will sign. **Absent for
+  `transfer` providers** (the P2P venues, NEAR, THORCHAIN_MEMOLESS): their deposit address does not
+  exist until the order does, and it arrives from `commit`.
 
 ```jsonc
-{ "providers": ["QUICKEX"], "expectedBuyAmount": "1.52", /* … */, "execution": { /* … */ }, "uuid": "b5b1b8c1-…" }
+// transfer provider — no uuid, no execution yet
+{ "previewToken": "q7Zk…", "providers": ["STEALTHEX"], "sellAmount": "0.01", "expectedBuyAmount": "0.3412", "minBuyAmount": null, "fees": [ /* … */ ], "expiresAt": 1790750000000, /* … */ }
+// everyone else — execution present and final
+{ "previewToken": "q7Zk…", "providers": ["THORCHAIN"], /* … */, "execution": { "method": "thorchain_deposit", /* … */ } }
 ```
 
 On failure the body is the provider error with a matching HTTP status:
@@ -309,9 +369,52 @@ On failure the body is the provider error with a matching HTTP status:
 
 ---
 
-## 6. `execution` — how to send funds
+## 6. `POST /v3/commit` — Swap pressed
 
-The committed route carries exactly one `execution` object. **Switch on `execution.method`** and
+The only call with side effects: creates the provider order (where there is one) and the swap record.
+
+### Request
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `previewToken` | string | yes | The token of the preview the user confirmed. It is also the **idempotency key**: resending the same token replays the first answer instead of creating a second order. To retry a commit, resend the same token — never preview again just to retry. |
+| `inboundTxHash` | string | no | If you already signed the transaction you received at preview, its hash — reported here, **before broadcasting**. See [Report the hash before broadcasting](#report-the-hash-before-broadcasting). |
+
+### Response
+
+`200`:
+
+```jsonc
+{
+  "status": "ok",
+  "uuid": "b5b1b8c1-…",          // the tracking handle
+  "sellAmount": "0.01",          // what to send — for exact output, the order's own input
+  "expectedBuyAmount": "0.3409", "minBuyAmount": null, "expiresAt": 1790750000000,
+  "replayed": false,             // true when this token was committed before and this is its stored answer
+  "execution": { "method": "transfer", "depositAddress": "bc1q…", "amount": "0.01", "asset": "BTC.BTC", /* unsignedTx, qr */ }
+                                 // ONLY for transfer providers, now complete; absent for providers whose execution you already hold
+}
+```
+
+The amounts are the order's own. For a `transfer` provider they can differ slightly from the preview;
+the server refuses an order that drifted against the user beyond the request's `slippage` (below).
+
+Every other outcome carries a `status` field:
+
+| HTTP | `status` | Meaning — what to do |
+|---|---|---|
+| 409 | `in_progress` | The same preview is being committed right now (a double tap). Retry shortly with the same token. |
+| 409 | `refresh_required` | The token expired or is invalid, or the provider was suspended meanwhile. Preview again. |
+| 409 | `rate_changed` | The order the provider created is worse than the preview beyond your `slippage`. Body: `{ uuid, field, previewed, committed, driftPct, tolerancePct }` — `field` is the bound that broke (`expectedBuyAmount` / `minBuyAmount` for exact input, `sellAmount` / `minSellAmount` for exact output). The record is left `failed`; preview again. |
+| 4xx / 5xx | `provider_error` | The provider refused: the `/preview` error body (`error`, `provider`, `errorCode`) plus `status`. |
+| 502 | — | Internal failure. Retry with the **same token**: if the commit did go through, the retry replays it. |
+
+---
+
+## 7. `execution` — how to send funds
+
+A route you act on — the `/preview` for most providers, the `/commit` answer for `transfer`
+providers — carries exactly one `execution` object. **Switch on `execution.method`** and
 handle only that branch; nothing else applies.
 
 ### `signed_transaction` — 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, Axelar ITS
@@ -385,7 +488,7 @@ on its own chain automatically.
   the bought asset to your `destinationAddress` on the destination chain automatically (no second
   signature). Broadcast promptly (EVM tx / Solana message expire), and if `approval` is present,
   approve the token first (EVM). The minimum-received is enforced on-chain (the tx reverts below it).
-  Track by `uuid` and send your source-chain broadcast hash as `inboundTxHash` (see §7); the status
+  Track by `uuid` and send your source-chain broadcast hash as `inboundTxHash` (see §8); the status
   reports both the source and destination legs.
 - **Soroswap / Aquarius / Stellar DEX:** decode the base64 `xdr` as a `TransactionEnvelope`, sign it
   with the `sourceAddress` key, and submit it to Horizon (or any RPC). Broadcast **promptly** — the
@@ -434,11 +537,15 @@ parameters. Notes that matter:
   debited per transaction should not exceed the quoted `sellingAmount` (plus a little headroom for the
   broker's on-chain fee leg). Cap the number of transactions you will sign in one session.
 - **The trade may span several transactions** (SB splits large orders into chunks). Report the hash of
-  a submitted transaction as `inboundTxHash` to `/v2/track`; if several were submitted, the reported one
+  a submitted transaction as `inboundTxHash` to `/v3/track`; if several were submitted, the reported one
   yields a lower-bound amount.
 - `destinationAddress` must equal `sourceAddress` — SB settles on the trader's account.
 
-### `transfer` — P2P providers, NEAR
+### `transfer` — P2P providers, NEAR, THORCHAIN_MEMOLESS
+
+> For these providers the `execution` arrives from `/commit`, never from `/preview`. For
+> **THORCHAIN_MEMOLESS** the `amount` is the **exact** amount to send — up to 0.001 below what you
+> requested, since its last five 1e-8 digits identify the swap — so send exactly `execution.amount`.
 
 Make a **standard transfer** of `amount` of `asset` to `depositAddress`.
 
@@ -474,6 +581,10 @@ Make a **standard transfer** of `amount` of `asset` to `depositAddress`.
 - **`unsignedTx`** appears only when you sent `sourceAddress` and the chain is buildable. Sign and
   broadcast it, *or* ignore it and build your own transfer to `depositAddress`.
 - **`qr`** is an optional server-rendered deposit QR (`str` = encoded payload, `dataURL` = image).
+- **`amount`** always equals the route's `sellAmount` — transfer that. On an
+  [exact-output](#exact-output--buyamount) quote it is the amount NEAR computed rather than one you
+  supplied, and it carries a refundable buffer; send it as given (sending less than
+  `meta.near.minSellAmount` gets the deposit refunded instead of swapped).
 
 ### `thorchain_deposit` — THORChain, Mayachain
 
@@ -509,32 +620,39 @@ deposit. The memo **is** the swap order — never omit it. `delivery.kind` tells
 
 ---
 
-## 7. `POST /v2/track` — track a swap
+## 8. `POST /v3/track` — track a swap
 
-Track by the committed route's top-level **`uuid`**. The server tracks by it alone — it already knows
-the provider and every swap detail from the record, so you never reconstruct the request; you just send
-the `uuid` (plus, for DEX swaps, your broadcast tx hash).
+Track by the **`uuid`** that `/commit` returned. The server tracks by it alone — it already knows the
+provider and every swap detail from the record; you only ever send the `uuid` and, once, your inbound
+tx hash.
 
 ### Request
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `uuid` | string | yes | The committed route's `uuid` |
-| `inboundTxHash` | string | conditional | Your broadcast tx hash (Solana: the tx **signature**; Stellar: the transaction hash — if you fee-bumped, the **outer** hash works, Horizon resolves both). **Required for DEX swaps** (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, StellarBroker, Axelar ITS — any route whose `execution.method` was `thorchain_deposit`, `signed_transaction`, or `stellar_broker`) once you have it; the server finds your tx on-chain by it. P2P / NEAR don't need it — the provider watches its own deposit address. |
+| `uuid` | string | yes | The `uuid` returned by `/commit` |
+| `inboundTxHash` | string | conditional | The hash of your signed inbound transaction (Solana: the tx **signature**; Tron: the tx id; Stellar: the transaction hash — if you fee-bumped, the **outer** hash works, Horizon resolves both). Report it **before broadcasting**, in whichever call comes next after signing: in `/commit` when you signed the preview's tx (THORChain, Mayachain, 1inch, Barter, Circle, Jupiter, LI.FI, Soroswap, Aquarius, Stellar DEX, StellarBroker, Axelar ITS), otherwise here on your first `/track`. For P2P / NEAR it is kept for reference only — the provider watches its own deposit address. |
 
-- **P2P (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE) and NEAR:**
+```json
+{ "uuid": "b5b1b8c1-…" }                                   // once the hash is on the record
+{ "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }   // first track after signing, if not sent with commit
+```
 
-  ```json
-  { "uuid": "b5b1b8c1-…" }
-  ```
+The server remembers the hash for subsequent polls. The same hash again is a no-op; a **different**
+hash while the record is still `not_started` / `signed` **replaces** the old one (a fee bump or
+speed-up changes the tx id), and is a `409` once a deposit was seen.
 
-- **DEX swaps:** after you broadcast, add your tx hash:
+### Report the hash before broadcasting
 
-  ```json
-  { "uuid": "b5b1b8c1-…", "inboundTxHash": "0xabc123…" }
-  ```
+**Sign, report the hash, then broadcast.** If the app dies between the broadcast and its next call,
+the server already knows which transaction to look for and resolves the swap on its own — THORChain
+and DEX swaps are identified by that hash, P2P / NEAR swaps by their order. The record moves to
+**`signed`** and the hourly sync takes it from there.
 
-The server remembers the hash for subsequent polls.
+| Provider | You sign… | Report the hash in |
+|---|---|---|
+| THORChain, Mayachain, 1inch, Barter, Jupiter, LI.FI, Circle, Axelar ITS, StellarBroker, Soroswap, Aquarius, Stellar DEX | the transaction from the preview | `/v3/commit` |
+| LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania, NEAR (all rails), THORCHAIN_MEMOLESS | the transfer you build once `commit` returns the address | your first `/v3/track` |
 
 ### Response
 
@@ -561,8 +679,10 @@ The server remembers the hash for subsequent polls.
 `legs[]` renders multi-stage progress (deposit → swap → outbound); each provider's tracker fills the
 legs over time.
 
-- `409` `{ "message": "Swap not trackable yet", "uuid": "…" }` — recorded but not yet trackable (e.g.
-  a DEX swap whose `inboundTxHash` you haven't sent). Send the hash, then poll again.
+- Before anything is observable on-chain or at the provider, the body is the record's own state
+  instead of a tracker report: `{ "uuid", "status": "signed" | "not_started", "providers", "hash"?, "legs": [] }`.
+  Keep polling.
+- `409` — you sent a different `inboundTxHash` than the one on a swap whose deposit was already seen.
 - `404` — the `uuid` is unknown.
 
 ### Statuses
@@ -570,6 +690,7 @@ legs over time.
 | Status | Meaning |
 |---|---|
 | `not_started` | Funds not yet received |
+| `signed` | Your inbound tx hash is on the record, nothing observed yet (see [Report the hash before broadcasting](#report-the-hash-before-broadcasting)) |
 | `pending` | Funds received, waiting to process |
 | `swapping` | Swap in progress |
 | `action_required` | Funds reached the provider but the swap is stuck and won't auto-resolve — the user must contact the provider. See below. |
@@ -597,39 +718,39 @@ When `status === "action_required"`, the response includes `meta.pauseReason`:
 | `provider_error` | Provider-side error after a deposit (catch-all) |
 | `manual_review` | Provider's generic "needs human attention" state |
 
-To help the user recover funds, surface the provider's `contacts` from `GET /v2/providers` alongside
+To help the user recover funds, surface the provider's `contacts` from `GET /v3/providers` alongside
 `meta.pauseReason`. The user contacts the provider directly; once resolved, the next poll reports a
 terminal status.
 
 ---
 
-## 8. Affiliate revenue share
+## 9. Affiliate revenue share
 
 As a partner you earn a revenue share automatically — there is **nothing to send per request.**
 
 - Your share is a percentage of **our service fee** on each swap routed through your API key,
   which you set yourself at https://swap.unstoppable.money/affiliate (in basis points; e.g.
   2000 = 20% of the service fee). Changes take effect on your next quote.
-- It is computed and recorded server-side at quote time on every committed (`/v2/swap`) swap, across
+- It is computed and recorded server-side at quote time on every committed (`/v3/commit`) swap, across
   all providers. The total fee shown to your user is unchanged — your share is carved out of our cut,
   not added on top.
 - Earnings accrue against completed swaps and are paid out per your agreement. You don't pass any
   affiliate parameter to collect this; it is keyed off your API key.
 
-> `/v2` takes **no** request-level affiliate parameter — your share is determined entirely by your API
+> `/v3` takes **no** request-level affiliate parameter — your share is determined entirely by your API
 > key and the percentage you set on the partner page. There is nothing to add to a request.
 
 ---
 
-## 9. Supporting endpoints
+## 10. Supporting endpoints
 
 All require the `X-API-Key` header.
 
-### `GET /v2/providers`
+### `GET /v3/providers`
 
 Lists all providers with `amlPolicy`, `amlPolicyDescription`, `contacts` (`{ email?, telegram?, … }`),
-`supportedChainIds`, `suspended`, an `accuracy` block (`{ matched, total, avgDeviation }`), and
-`executionType`.
+`supportedChainIds`, `suspended`, `suspensions` (see below), an `accuracy` block
+(`{ matched, total, avgDeviation }`), `quotes`, and `executionType`.
 
 **`executionType`** is the single execution method a provider commits to — one of `transfer`,
 `signed_transaction`, `thorchain_deposit`, or `stellar_broker`. **If you have no wallet integration**
@@ -639,20 +760,70 @@ Lists all providers with `amlPolicy`, `amlPolicyDescription`, `contacts` (`{ ema
 requires a live WebSocket session that signs transactions on demand. Filter on this **before quoting**
 so you only offer providers you can actually fulfill.
 
-### `GET /v2/tokens?provider=THORCHAIN`
+**`suspended` / `suspensions[]` — two levels of "temporarily unavailable".**
+
+`suspended: true` means the whole provider is off; skip it entirely. `suspensions[]` is narrower — the
+provider still works, just not for certain assets:
+
+```jsonc
+"suspensions": [
+  { "kind": "asset", "side": "any", "asset": "XMR.XMR" },
+  { "kind": "asset", "side": "buy", "asset": "ZEC.ZEC" },     // can't PAY OUT this asset
+  { "kind": "chain", "side": "any", "chain": "POL" },          // everything on Polygon
+  { "kind": "pair",  "side": "any", "sellAsset": "BTC.BTC", "buyAsset": "ETH.ETH" },
+  { "kind": "asset", "side": "any", "asset": "LTC.LTC", "expiresAt": "2026-08-12T09:00:00.000Z" }
+]
+```
+
+- **`kind: "asset"`** — that asset, on the side given by `side` (`any` | `sell` | `buy`). A provider's
+  ability to take a deposit and to pay out fail independently, which is why `side` exists.
+- **`kind: "chain"`** — every asset on that chain.
+- **`kind: "pair"`** — that **directed** pair only. The reverse direction is a separate rule and may
+  well be live.
+- **`expiresAt`** (optional, ISO-8601) — the rule lapses on its own. Absent = until lifted manually.
+  If you cache this response, re-check it: a rule can expire while you hold it.
+
+**Assets are CANONICAL ids — normalize before comparing.** They are ordinary asset IDs (same vocabulary
+as [§3](#3-asset-id-format)), but exactly **one spelling per asset**: the contract, never the symbol.
+
+| You might send | Canonical form |
+|---|---|
+| `ETH.USDC-0XA0B86991…` / `ETH.0xA0b86991…` / bare `0xA0b86991…` | `ETH.0XA0B86991…` |
+| `BTC.BTC` | `BTC.BTC` |
+| `SOL.USDC-EPJFWDD5…` / `SOL.EPjFWdd5…` / bare mint | `SOL.EPJFWDD5…` |
+| `XLM.USDC-GA5ZSE…` / `XLM.USDC:GA5ZSE…` | `XLM.USDC-GA5ZSE…` (code case-sensitive) |
+
+The rule is: **drop the symbol, upper-case everything else** — except a Stellar asset code, which is
+genuinely case-sensitive (`yXLM` ≠ `YXLM`). Identity is the contract, so `ETH.USDC-0X…` and
+`ETH.UNKNOWN-0X…` are one asset.
+
+So **do not compare your request string directly** — one asset has several valid spellings and you may
+not be using the one stored. Normalize your own token the same way and compare that.
+
+These are ordinary asset ids and read naturally in logs; almost all can be pasted straight into
+`/v3/rate`. Solana/Tron are the exception — base58 is case-sensitive, so the upper-cased form does not
+round-trip.
+
+Quoting a suspended combination is safe — it returns an `assetSuspended` provider error rather than a bad
+route — so honouring `suspensions[]` is about not offering your user a route that is going to fail.
+
+**`quotes`** (boolean) — false on entries that exist only to carry policy for a provider our mobile
+wallets run natively. **Ignore `quotes: false` entries**; this API cannot quote them.
+
+### `GET /v3/tokens?provider=THORCHAIN`
 
 Returns the supported token list for a provider. Supports `ETag` / `If-None-Match` (304). **BARTER,
 ONEINCH, JUPITER, LI.FI, STELLARBROKER, SOROSWAP, AQUARIUS, and STELLAR_DEX do not expose a token
 list** — encode assets directly (contract address for EVM, mint for Solana, `XLM.CODE-GISSUER…` for
 Stellar; see [§3](#3-asset-id-format)). AXELAR_ITS does publish one (its four bridgeable rows).
 
-### `GET /v2/inbound_addresses`
+### `GET /v3/inbound_addresses`
 
 Returns the current THORChain/Mayachain inbound (vault) addresses.
 
 ---
 
-## 10. Providers & AML policy
+## 11. Providers & AML policy
 
 | Provider | Type | AML Policy | Notes |
 |---|---|---|---|
@@ -669,18 +840,21 @@ Returns the current THORChain/Mayachain inbound (vault) addresses.
 | STELLAR_DEX | DEX | `excellent` | Stellar only. The native order book + classic liquidity pools via Horizon path payments. Third-party `destinationAddress` supported. No token list. |
 | AXELAR_ITS | Bridge | `excellent` | Same-token 1:1 bridge, Stellar ↔ Ethereum, XLM and SHX only. Not a swap: `sellAsset` and `buyAsset` are the same asset on different chains. |
 | NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
+| THORCHAIN_MEMOLESS | DEX | `excellent` | **v3 only.** A THORChain swap paid with a **plain transfer** — `transfer` execution, no memo / OP_RETURN / calldata — for wallets that cannot attach one. Native coins only (BTC, ETH, LTC, BCH, DOGE, AVAX, BSC, …; not tokens, not RUNE). The committed amount is **lower than requested by up to 0.001** of the asset (its last five 1e-8 digits identify the swap), and the deposit address + exact amount arrive from `commit`, so the deposit must be for exactly that amount. Listed by `GET /v3/providers` only while enabled server-side. |
 | LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `fair` | Wide cross-chain coverage |
 | QUICKEX | P2P | `good` | Wide cross-chain coverage. Supports AML address precheck. |
 | SWAPUZ | P2P | `good` | Wide cross-chain coverage |
 | EXOLIX | P2P | `good` | Wide cross-chain coverage |
 | CCE | P2P | `good` | Wide cross-chain coverage |
+| LIZEX | P2P | `good` | Curated catalog: ~21 assets on 13 chains (BTC, ETH, ARB, SOL, BSC, TRON, XMR, ZEC, XRP, BCH, LTC, DOGE) — only coins Lizex guarantees will not be frozen by its AML/KYC checks. Minimum ≈$60 per swap. |
+| BITANIA | P2P | `good` | Order-book venue with a small catalog: BTC, LTC, XMR, TRX, USDT-TRC20 sellable; ETH and AVAX buy-only. Amounts beyond book depth are declined rather than partially filled. Minimum ≈$6 per swap. |
 
 **DEX** = decentralized, on-chain execution. **P2P** = centralized order matching; the provider
 watches its own deposit address, so tracking needs only the route's `uuid` (no broadcast tx hash).
 
 The `amlPolicy` describes how a provider handles AML checks. It is returned on every quote route and on
-`GET /v2/providers`. Use it to set user expectations before a swap.
+`GET /v3/providers`. Use it to set user expectations before a swap.
 
 | Policy | Meaning |
 |---|---|
@@ -690,17 +864,22 @@ The `amlPolicy` describes how a provider handles AML checks. It is returned on e
 
 ---
 
-## 11. Error reference
+## 12. Error reference
 
 | HTTP | Meaning |
 |---|---|
 | 400 | Validation error / unsupported pair or asset / amount out of range |
 | 401 | Missing or invalid `X-API-Key` |
 | 403 | Account is not active |
-| 404 | No route, or unknown `uuid` on `/v2/track` |
-| 409 | Rate expired (re-quote), or swap not trackable yet |
+| 404 | No route, or unknown `uuid` on `/v3/track` |
+| 409 | Rate expired (re-quote); on `/commit` one of `in_progress` / `refresh_required` / `rate_changed` (see the commit section); on `/track` a conflicting inbound hash |
 | 502 | Upstream provider failure (network / bad response) |
-| 503 | Provider suspended |
+| 503 | Provider suspended (`providerSuspended`), or this asset/pair is suspended for it (`assetSuspended`) |
 | 504 | Provider timed out |
 
 Provider error bodies carry `{ error, provider, errorCode?, minimumAmount?, maximumAmount? }`.
+
+`assetSuspended` is distinct from `providerSuspended` on purpose: the provider is fine, this particular
+asset, chain or direction is not. Both are temporary — see `suspensions[]` on
+[`GET /v3/providers`](#get-v3providers) to avoid offering the route in the first place.
+

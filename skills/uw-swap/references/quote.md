@@ -1,26 +1,31 @@
 # Quotes & Swap Execution
 
-> A committed route carries one **`execution`** object that tells you exactly — and only — what you must
-> do to send funds. You switch on `execution.method` and handle that one branch; nothing else applies.
-> There is no flat set of optional fields to reconstruct intent from. (A `/rate` route is economics only
-> — no `execution` until you commit with `/swap`.)
+> A route carries one **`execution`** object that tells you exactly — and only — what you must do to
+> send funds. You switch on `execution.method` and handle that one branch; nothing else applies. There
+> is no flat set of optional fields to reconstruct intent from. (A `/rate` route is economics only — no
+> `execution`. A `/preview` route has it for every provider except the P2P venues and NEAR, whose deposit
+> address only exists once `/commit` creates the order.)
 
 ## Endpoints
 
-The quote contract is split by intent into two endpoints:
+The quote contract is split by intent into three endpoints:
 
 ```
-POST https://swap-api.unstoppable.money/agent/v2/rate    ← compare routes, no order
-POST https://swap-api.unstoppable.money/agent/v2/swap    ← commit: create the order with ONE provider
+POST https://swap-api.unstoppable.money/agent/v3/rate      ← compare routes, no order
+POST https://swap-api.unstoppable.money/agent/v3/preview   ← the committed route for ONE provider, creates NOTHING
+POST https://swap-api.unstoppable.money/agent/v3/commit    ← create the order; idempotent on the previewToken
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
-`/rate` is read-only — it prices the swap across providers and creates nothing. `/swap` commits: it
-creates the real order with the single provider you name and returns the executable route.
+`/rate` is read-only — it prices the swap across providers. `/preview` is read-only too: it returns the
+exact route you would commit, plus a `previewToken`, and you may call it as often as you like. `/commit`
+is the only call with side effects: it creates the real order with the provider and returns the tracking
+`uuid` (and, for P2P / NEAR, the deposit address).
 
-**Flow:** call `/rate` to compare → pick the best route → call `/swap` with that provider to create the
-order → send funds per its `execution` → poll `/track`.
+**Flow:** `/rate` to compare → pick the best route → `/preview` with that provider → confirm with the user
+→ `/commit` with the `previewToken` → send funds per `execution` → poll `/track`.
+
 
 ## `/rate` request
 
@@ -28,7 +33,8 @@ order → send funds per its `execution` → poll `/track`.
 |---|---|---|---|
 | sellAsset | string | yes | Asset to sell — see [providers.md](providers.md) for format |
 | buyAsset | string | yes | Asset to buy |
-| sellAmount | string | yes | Decimal string, e.g. `"0.1"` |
+| sellAmount | string | conditional | Decimal string, e.g. `"0.1"`. Exactly one of sellAmount / buyAmount |
+| buyAmount | string | conditional | Quote by **exact output** — "deliver exactly this much". **NEAR only**; see below |
 | slippage | number | yes | Tolerance 0–99 |
 | providers | string[] | no | Filter to specific providers |
 | floating | boolean | no | P2P only. Default `true` |
@@ -36,12 +42,27 @@ order → send funds per its `execution` → poll `/track`.
 
 A rate needs no addresses — it builds nothing.
 
-## `/swap` request
+### Exact output (`buyAmount`)
+
+Send `buyAmount` instead of `sellAmount` when the user names what they want to **receive** ("get me
+exactly 0.005 BTC") rather than what they want to spend. Send exactly one of the two — both or
+neither is a 400.
+
+**Only NEAR serves this.** Every other provider returns `routeNotFound` with "Provider cannot quote
+an exact output amount", so send `providers: ["NEAR"]` and don't report the rest as failures.
+
+The response swaps which field is the answer: `sellAmount` becomes **the amount the user must send**
+and `expectedBuyAmount` is exactly what they asked for (with `minBuyAmount` equal to it — a real
+guarantee, not an estimate). `sellAmount` includes a ~1% buffer over `meta.near.minSellAmount`; the
+unused part is **refunded**, so describe it as "send up to X", never as a fee. Sending less than
+`minSellAmount` gets the deposit refunded instead of swapped.
+
+## `/preview` request
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| sellAsset / buyAsset / sellAmount / slippage | | yes | Same as `/rate` |
-| **provider** | string | yes | The **single** provider to create the order with |
+| sellAsset / buyAsset / sellAmount \| buyAmount / slippage | | yes | Same as `/rate`, incl. exactly one amount side |
+| **provider** | string | yes | The **single** provider to preview (and later commit) with |
 | **destinationAddress** | string | yes | Receiving address — funds must land somewhere |
 | refundAddress | string | no | Refund address on failure (required by most P2P providers) |
 | sourceAddress | string | conditional | The build signal — see below. Required for `signed_transaction` providers (1inch/Barter/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) since the tx needs a `from` / signer, and for STELLARBROKER, whose session trades from that account. For STELLARBROKER and AQUARIUS, `destinationAddress` must **equal** it — both settle on the trader's own account. |
@@ -55,6 +76,17 @@ tx yourself (HD wallets that build a better tx — e.g. multi-UTXO sweeps). It i
 execution method: it only adds an optional `unsignedTx` to `transfer` and `thorchain_deposit` routes.
 `signed_transaction` routes always carry their tx because the swap *is* a contract call — there is no
 address-transfer alternative — so those providers require `sourceAddress`.
+
+## `/commit` request
+
+```json
+{ "previewToken": "q7Zk…", "inboundTxHash": "0xabc…" }
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| previewToken | string | yes | From the `/preview` you confirmed with the user. Opaque, valid ~10 minutes. It is also the **idempotency key**: on a timeout or any doubt, resend the **same token** — a repeat replays the first answer and can never create a second order. Never re-preview just to retry. |
+| inboundTxHash | string | no | If you already signed the tx you got at preview (every provider except P2P / NEAR), its hash — report it here, **before broadcasting**, so the server can finish tracking even if you never call again. |
 
 ## `/rate` response
 
@@ -90,17 +122,17 @@ it (on-chain minReturn for 1inch/Barter, Jupiter's on-chain slippage threshold, 
 minimum-received, the on-chain floor built into the Stellar tx for Soroswap/Aquarius/Stellar DEX, the
 1:1 bridge amount for Axelar ITS, THORChain/Mayachain memo limit, NEAR intent minimum, or a locked
 fixed-rate P2P quote). It is `null` when nothing enforces the number: floating-rate P2P routes
-(LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Pegasus), where the quote is an **estimate
+(LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Pegasus, Lizex, Bitania), where the quote is an **estimate
 re-priced when the deposit arrives**; **STELLARBROKER**, which re-quotes live inside its execution
 session; and **CIRCLE**, whose forwarder-fee tier can shift. Tell the user the received amount can
 differ from the quote in either direction.
 
 A `/rate` route carries economics only: amounts, `fees`, `estimatedTime`, `minBuyAmount`,
 `amlPolicy`/`accuracy`, and for P2P a `rate` + `expiresAt` lock. It has **no `execution`** and no `uuid`
-tracking handle — there's no order, deposit address, or tx yet. Those appear **only** on the `/v2/swap`
-response (below), which creates the order. (`approvalSpender` is the one exception — present on a rate so
-you can pre-check the ERC20 allowance before committing; on `/swap` the same spender rides
-`execution.approval`.)
+tracking handle. The `execution` appears on `/preview` (except for P2P / NEAR, where it appears on
+`/commit` together with the deposit address); the `uuid` appears only on `/commit`, which creates the
+order. (`approvalSpender` is the one exception — present on a rate so you can pre-check the ERC20
+allowance before committing; on `/preview` the same spender rides `execution.approval`.)
 
 ### Fee types
 
@@ -116,16 +148,38 @@ but the breakdown is useful when explaining costs to a user. Each entry's `type`
 A route may carry several entries of different types. Each amount is denominated in that entry's `asset`,
 and each carries the `protocol` (which provider) and `chain` it applies to.
 
-## `/swap` response
+## `/preview` response
 
-`/swap` returns the **single executable route directly** (no `{ routes }` wrapper) — the same `Route`,
-now carrying the `execution` block and a top-level `uuid` tracking handle because the order exists:
+`/preview` returns the **single route directly** (no `{ routes }` wrapper) — the same `Route`, now with a
+`previewToken` and, for every provider except P2P / NEAR, the final `execution` block. No `uuid`: nothing
+exists yet.
 
 ```jsonc
-{ "providers": ["QUICKEX"], "expectedBuyAmount": "1.52", …, "execution": { … }, "uuid": "b5b1b8c1-…" }
+{ "providers": ["THORCHAIN"], "expectedBuyAmount": "1.52", …, "execution": { … }, "previewToken": "q7Zk…" }   // execution final
+{ "providers": ["QUICKEX"],   "expectedBuyAmount": "1.52", …, "previewToken": "q7Zk…" }                        // P2P / NEAR: no execution until commit
 ```
 
-On failure it returns the provider error as the body with a matching HTTP status:
+## `/commit` response
+
+`200`: the order exists. `execution` is present **only** for P2P / NEAR (the completed `transfer` with the
+deposit address); for the others you already hold it from the preview.
+
+```jsonc
+{ "status": "ok", "uuid": "b5b1b8c1-…", "sellAmount": "0.1", "expectedBuyAmount": "1.52", "minBuyAmount": null,
+  "expiresAt": 1718700000000, "replayed": false, "execution": { "method": "transfer", "depositAddress": "…", … } }
+```
+
+Other outcomes, each with a `status` field:
+
+| HTTP | `status` | Do |
+|---|---|---|
+| 409 | `in_progress` | the same preview is being committed right now — retry shortly with the same token |
+| 409 | `refresh_required` | token expired / invalid, or the provider was suspended — call `/preview` again |
+| 409 | `rate_changed` | the order drifted past your `slippage` (`field`, `previewed`, `committed`, `driftPct` in the body) — call `/preview` again and re-confirm with the user |
+| 4xx/5xx | `provider_error` | the provider refused — the error body below plus `status` |
+| 502 | — | retry with the **same token** |
+
+On failure `/preview` returns the provider error as the body with a matching HTTP status:
 
 ```jsonc
 // HTTP 400 / 404 / 409 / 502 / 503 / 504
@@ -252,23 +306,26 @@ deposit. The memo **is** the swap order — never omit it. `delivery.kind` tells
 
 ## Tracking
 
-The committed route carries a top-level **`uuid`** — the tracking handle. Store it and track by it; the
-server knows the provider and all swap details from the record. For DEX routes (`execution.method` of
-`thorchain_deposit`, `signed_transaction`, or `stellar_broker`) also send your broadcast tx hash as
-`inboundTxHash` on `/v2/track`; P2P/NEAR (`transfer`) need only the `uuid`.
+`/commit` returns the **`uuid`** — the tracking handle. Store it and track by it on `/v3/track`; the
+server knows the provider and all swap details from the record.
 
-```jsonc
-{ "providers": ["BARTER"], …, "execution": { … }, "uuid": "b5b1b8c1-4a18-42a0-ab84-374d36f68f17" }
-```
+**Report your inbound tx hash before broadcasting**, in whichever call comes next after signing: for
+DEX routes (`thorchain_deposit`, `signed_transaction`, `stellar_broker`) you sign the preview's tx, so
+pass the hash to `/commit` as `inboundTxHash`; for P2P / NEAR you build the transfer after `commit`
+returns the address, so pass it to your first `/track`. Then broadcast. The swap moves to `signed`, and
+the server resolves it on its own even if you never call again.
 
 See [track.md](track.md) for the full request/response shapes.
 
 ## Rules
 
-- Compare with `/rate`, then commit the winner with `/swap` — `/swap` names exactly one `provider` and requires `destinationAddress`.
-- If you call `/swap` but never send funds, your fulfillment ratio drops and your rate limit is reduced.
-- `signed_transaction` providers (1inch/Barter/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) and STELLARBROKER require `sourceAddress` on `/swap`.
-- STELLARBROKER and AQUARIUS require `destinationAddress == sourceAddress`; a Stellar classic buy also requires the recipient's trustline to exist first, or `/swap` returns `400`.
+- Compare with `/rate`, preview the winner with `/preview` (one `provider`, `destinationAddress` required), confirm, then `/commit` with the `previewToken`.
+- Preview is free — call it again whenever the user changes something. Commit once. To retry a commit, resend the **same token**; a fresh preview is a fresh intent and may create a second order.
+- If you `/commit` but never send funds, your fulfillment ratio drops and your rate limit is reduced.
+- Report your inbound tx hash before broadcasting: in `/commit` when you signed the preview's tx, otherwise in your first `/track`.
+- `signed_transaction` providers (1inch/Barter/Circle/Jupiter/LI.FI/Soroswap/Aquarius/Stellar DEX/Axelar ITS) and STELLARBROKER require `sourceAddress` on `/preview`.
+- STELLARBROKER and AQUARIUS require `destinationAddress == sourceAddress`; a Stellar classic buy also requires the recipient's trustline to exist first, or `/preview` returns `400`.
 - A route's `execution.method` is fixed by the provider+chain; it never depends on whether you sent `sourceAddress`. Sending `sourceAddress` only adds an `unsignedTx` to `transfer`/`thorchain_deposit` routes.
-- For P2P providers, lock a rate by passing the `rate.id` from a `/rate` route as `rateId` on `/swap` before `expiresAt`.
+- For P2P providers, lock a rate by passing the `rate.id` from a `/rate` route as `rateId` on `/preview` before `expiresAt`.
+- THORCHAIN_MEMOLESS (a THORChain swap paid by plain transfer, no memo) is a `transfer` provider: its deposit address and **exact** amount come from `/commit`; the amount is up to 0.001 lower than requested — send exactly what `execution.amount` says.
 - Handle the `execution` branch for the route you chose and ignore the others — the fields you need are all and only in that branch.

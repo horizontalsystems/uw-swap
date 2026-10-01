@@ -85,12 +85,15 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 | STELLAR_DEX | DEX | `excellent` | Stellar only. Native order book + classic liquidity pools via Horizon path payments. Third-party `destinationAddress` supported. No token list. |
 | AXELAR_ITS | Bridge | `excellent` | Same-token 1:1 bridge, Stellar ↔ Ethereum, XLM and SHX only. Not a swap — both sides are the same asset. |
 | NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
+| THORCHAIN_MEMOLESS | DEX | `excellent` | **v3 only.** A THORChain swap paid with a **plain transfer** (`transfer` execution — no memo / OP_RETURN / calldata), for wallets that cannot attach one. Native coins only (not tokens, not RUNE). The deposit address and the **exact** amount come from `/commit`; the amount is up to 0.001 lower than requested — send exactly `execution.amount`. Listed by `GET /v3/providers` only while enabled server-side. |
 | LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `fair` | Wide cross-chain coverage |
 | QUICKEX | P2P | `good` | Wide cross-chain coverage. Supports AML address precheck (see below). |
 | SWAPUZ | P2P | `good` | Wide cross-chain coverage |
 | EXOLIX | P2P | `good` | Wide cross-chain coverage |
 | CCE | P2P | `good` | Wide cross-chain coverage |
+| LIZEX | P2P | `good` | Curated catalog: ~21 assets on 13 chains (BTC, ETH, ARB, SOL, BSC, TRON, XMR, ZEC, XRP, BCH, LTC, DOGE) — only coins Lizex guarantees will not be frozen by its AML/KYC checks. Minimum ≈$60 per swap. |
+| BITANIA | P2P | `good` | Order-book venue with a small catalog: BTC, LTC, XMR, TRX, USDT-TRC20 sellable; ETH and AVAX buy-only. Amounts beyond book depth are declined rather than partially filled. Minimum ≈$6 per swap. |
 
 **DEX** = decentralized, on-chain execution.  
 **P2P** = centralized order matching; the provider watches its deposit address, so tracking needs only the route's `uuid` (no broadcast tx hash).
@@ -114,7 +117,7 @@ Providers may also expose a `contact` field (typically an email) on the provider
 When the chosen route's provider is `QUICKEX`, run the address precheck **before** the user sends funds. Precheck both the `sourceAddress` (sender) and `destinationAddress` (receiver).
 
 ```
-GET https://swap-api.unstoppable.money/agent/v2/check-addresses?addresses=<csv>
+GET https://swap-api.unstoppable.money/agent/v3/check-addresses?addresses=<csv>
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -145,7 +148,7 @@ This endpoint is powered by Quickex's AML checker. Only QuickEx currently trigge
 ## Token Lists
 
 ```
-GET https://swap-api.unstoppable.money/agent/v2/tokens?provider=THORCHAIN
+GET https://swap-api.unstoppable.money/agent/v3/tokens?provider=THORCHAIN
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -155,7 +158,7 @@ Returns supported tokens for the given provider.
 ## List Providers
 
 ```
-GET https://swap-api.unstoppable.money/agent/v2/providers
+GET https://swap-api.unstoppable.money/agent/v3/providers
 X-Agent-Key: $USWAP_AGENT_KEY
 ```
 
@@ -170,5 +173,5 @@ that signs transactions on demand, so skip it unless you can drive one.
 - Starts at **15 req/hour** for new agents
 - Scales up automatically with fulfillment ratio (up to **100 req/hour**)
 - Agents with ≥50% fulfillment ratio receive a **3× bonus** (up to **200 req/hour**)
-- Creating real orders (via `/v2/swap`) but not sending funds lowers your ratio and rate limit
+- Creating real orders (via `/v3/commit`) but not sending funds lowers your ratio and rate limit
 - After 3 suspensions an agent is permanently banned

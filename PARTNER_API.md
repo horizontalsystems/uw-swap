@@ -16,7 +16,14 @@ contract to compare routes, execute a swap with the provider you pick, and track
 POST https://swap-api.unstoppable.money/v3/rate
 Content-Type: application/json
 X-API-Key: <your-api-key>
+X-Session-Id: 4f0b8f8e-2a51-4c1e-9d0e-6b1f3c2a7d10
 ```
+
+- **Session (optional, recommended):** `X-Session-Id` — a UUID you generate when the user opens the
+  swap screen, sent unchanged on every `rate`, `preview`, `commit`, `signed` and `track` call made
+  from that screen, and replaced by a new one for the next swap. It lets our support see the quotes
+  the user compared next to the swap they made. Anything that is not a UUID is ignored; the header
+  never changes a response.
 
 ---
 

@@ -16,7 +16,13 @@ POST https://swap-api.unstoppable.money/agent/v3/preview   ← the committed rou
 POST https://swap-api.unstoppable.money/agent/v3/commit    ← create the order; idempotent on the previewToken
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
+X-Session-Id: <one UUID per swap — optional, recommended>
 ```
+
+Send the **same** `X-Session-Id` on every `/rate` you compare, on the `/preview` and `/commit` of the swap
+you make, and on the `/signed` and `/track` calls after it; generate a new one for the next swap. It links
+the quotes you saw to the swap you made for support, and never changes an answer. The `previewToken`
+carries it, so a `/commit` without the header is still linked.
 
 `/rate` is read-only — it prices the swap across providers. `/preview` is read-only too: it returns the
 exact route you would commit, plus a `previewToken`, and you may call it as often as you like. `/commit`

@@ -1,7 +1,7 @@
 ---
 name: uw-swap
 description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, Barter, Uniswap, Jupiter (Solana), LI.FI (cross-chain EVM + Solana + Tron), Circle, NEAR, the Stellar venues (StellarBroker, Soroswap, Aquarius, Stellar DEX), the Axelar ITS bridge, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania).
-version: "1.4.0"
+version: "1.5.0"
 metadata:
   author: Horizontal Systems
   homepage: https://swap.unstoppable.money
@@ -17,6 +17,11 @@ metadata:
 
 All requests require `X-Agent-Key: $USWAP_AGENT_KEY` header.  
 Base URL: `https://swap-api.unstoppable.money/agent`
+
+**Session (optional, recommended):** generate one UUID per swap you work on and send it as
+`X-Session-Id` on every `/rate`, `/preview`, `/commit`, `/signed` and `/track` call for that swap;
+start a new one for the next swap. It ties the quotes you compared to the swap you made, so support can
+explain a result. It never changes a response, and anything that is not a UUID is ignored.
 
 ## Task Routing
 

@@ -4,6 +4,7 @@
 POST https://swap-api.unstoppable.money/agent/v3/track
 Content-Type: application/json
 X-Agent-Key: $USWAP_AGENT_KEY
+X-Session-Id: <the swap's session UUID, if you sent one on /rate, /preview and /commit>
 ```
 
 Track by the **`uuid`** that `/v3/commit` returned:

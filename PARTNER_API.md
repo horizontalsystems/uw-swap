@@ -130,6 +130,16 @@ returns no route. (Bitcoin is **not** supported by LI.FI here.)
 For **BARTER**, **ONEINCH**, **UNISWAP**, and **JUPITER**, both assets must be on the **same chain**. **LI.FI** may
 be cross-chain.
 
+### Which spelling to send, and what comes back
+
+Send an asset `GET /v3/tokens` lists as its catalog identifier, which every provider takes; a raw address
+reaches only the DEXes and LI.FI. Send an asset the list lacks (the DEXes and LI.FI have no catalog) by
+chain-prefixed address, as above. `ZEC.ZECSHIELDED` is not listed on v3: send `ZEC.ZEC`.
+
+Every asset field of a response (route `sellAsset`/`buyAsset`, `fees[].asset`, track `fromAsset`/`toAsset` and
+legs) uses one spelling per asset, whatever you sent, so compare them with each other, not with your request.
+`execution` fields and `meta` are unchanged.
+
 ### Stellar assets
 
 The four Stellar-native providers (**STELLARBROKER**, **SOROSWAP**, **AQUARIUS**, **STELLAR_DEX**) take
@@ -208,7 +218,8 @@ nothing. No addresses are needed because nothing is built yet.
 | `buyAmount` | string | conditional | Decimal string. Quote by **exact output** instead: "deliver exactly this much". NEAR only. |
 | `slippage` | number | yes | Tolerance, `0`–`99` |
 | `chainId` | string | conditional | Numeric EVM chain id as a string (`"1"` Ethereum, `"56"` BSC, `"137"` Polygon, `"42161"` Arbitrum, `"10"` Optimism, `"8453"` Base, `"43114"` Avalanche). **Required** when a BARTER/ONEINCH asset is a bare contract address (no chain prefix). |
-| `providers` | string[] | no | Narrow the fan-out to specific providers |
+| `providers` | string[] | no | Narrow the fan-out to specific providers. Without it the server calls only providers that can serve the request; the others, and suspended ones, appear nowhere in the response. A provider you name that cannot serve it comes back in `providerErrors` with the reason. |
+| `privacy` | string[] | no | Privacy levels to include: `none`, `basic` (the `privacy` value on `GET /v3/providers`). Absent = every level, so confidential routes (NEAR_CONFIDENTIAL) can appear; send `["none"]` for public providers only. Filters `providers` too. |
 | `floating` | boolean | no | P2P only. Default `true` |
 | `streamingInterval` / `streamingQuantity` | number | no | THORChain / Mayachain streaming swaps only |
 
@@ -268,10 +279,9 @@ round number.
 
 Send **exactly one** of the two. Neither or both is a `400`.
 
-Only **NEAR** can price backwards. Every other provider declines the request with
-`errorCode: "routeNotFound"` and `"Provider cannot quote an exact output amount; use sellAmount
-instead"` — so an unfiltered `/v3/rate` returns those in `providerErrors` and only the NEAR route in
-`routes`. Send `providers: ["NEAR"]` to avoid the noise.
+Only **NEAR** and **NEAR_CONFIDENTIAL** can price backwards, and without `providers` only they are called.
+A provider you name that cannot declines with `errorCode: "routeNotFound"` and `"Provider cannot quote an
+exact output amount; use sellAmount instead"`.
 
 The route reads the same, with the two amount fields swapping roles:
 
@@ -296,6 +306,28 @@ The route reads the same, with the two amount fields swapping roles:
 
 Prices are otherwise identical to the exact-input path: quoting `sellAmount` forward from the
 returned amount gives back the target plus the same buffer.
+
+### Zcash addresses — `addressRules`
+
+A `/rate` or `/preview` route with `ZEC.ZEC` on either side says which addresses to send:
+
+```jsonc
+"addressRules": {
+  "destination": {                                   // buying ZEC
+    "unified": { "receivers": ["orchard", "sapling"], "requiresOneOf": ["orchard", "transparent"] },
+    "transparent": true,
+    "tex": true
+  },
+  "refund": { "transparent": true },                 // selling ZEC
+  "source": { "transparent": true, "sameAsRefund": true }
+}
+```
+
+**If `unified` is present, send a unified (`u1…`) address; otherwise send a transparent one.** The address must
+carry a receiver from `requiresOneOf`; to build one for the route, use `receivers`. With `sameAsRefund: true`, a
+`sourceAddress` you send must equal `refundAddress`, or leave it out. `/v3/preview` may answer
+`400 { message, field, addressRules }` for an address the route does not take. A ZEC sell to EXOLIX may get a
+unified deposit address, so your wallet must be able to pay one.
 
 ### Fee types
 
@@ -768,7 +800,8 @@ Poll every 1–2 minutes. THORChain swaps typically complete in 5–20 minutes; 
 
 ### Action required
 
-When `status === "action_required"`, the response includes `meta.pauseReason`:
+When `status === "action_required"`, the response includes `meta.pauseReason`, and the same reason rides
+`meta.pauseReason` on the leg it holds up (the first one not `completed`):
 
 | Reason | Cause |
 |---|---|
@@ -902,6 +935,7 @@ Returns the current THORChain/Mayachain inbound (vault) addresses.
 | STELLAR_DEX | DEX | `excellent` | Stellar only. The native order book + classic liquidity pools via Horizon path payments. Third-party `destinationAddress` supported. No token list. |
 | AXELAR_ITS | Bridge | `excellent` | Same-token 1:1 bridge, Stellar ↔ Ethereum, XLM and SHX only. Not a swap: `sellAsset` and `buyAsset` are the same asset on different chains. |
 | NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
+| NEAR_CONFIDENTIAL | DEX | `fair` | The same rail run privately (`privacy: "basic"`): joins a `/v3/rate` unless `privacy` leaves it out. Allows same-asset private sends |
 | THORCHAIN_MEMOLESS | DEX | `excellent` | **v3 only.** A THORChain swap paid with a **plain transfer** — `transfer` execution, no memo / OP_RETURN / calldata — for wallets that cannot attach one. Native coins only (BTC, ETH, LTC, BCH, DOGE, AVAX, BSC, …; not tokens, not RUNE). The committed amount is **lower than requested by up to 0.001** of the asset (its last five 1e-8 digits identify the swap), and the deposit address + exact amount arrive from `commit`, so the deposit must be for exactly that amount. Listed by `GET /v3/providers` only while enabled server-side. |
 | LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `fair` | Wide cross-chain coverage |

@@ -1,7 +1,7 @@
 ---
 name: uw-swap
 description: Use this skill to get cryptocurrency swap quotes, execute cross-chain swaps, and track swap status across THORChain, Mayachain, 1Inch, Barter, Uniswap, Jupiter (Solana), LI.FI (cross-chain EVM + Solana + Tron), Circle, NEAR, the Stellar venues (StellarBroker, Soroswap, Aquarius, Stellar DEX), the Axelar ITS bridge, and P2P providers (LetsExchange, StealthEx, Quickex, Swapuz, Exolix, CCE, Lizex, Bitania).
-version: "1.5.0"
+version: "1.6.0"
 metadata:
   author: Horizontal Systems
   homepage: https://swap.unstoppable.money

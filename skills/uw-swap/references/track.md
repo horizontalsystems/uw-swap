@@ -103,7 +103,7 @@ Poll every 1-2 minutes until a terminal status is reached. THORChain swaps typic
 
 ## Action required
 
-When `status === "action_required"`, the response includes `meta.pauseReason` describing why the swap is stuck:
+When `status === "action_required"`, the response includes `meta.pauseReason` describing why the swap is stuck (the same reason also rides `meta.pauseReason` on the leg it holds up, the first one not `completed`):
 
 | Reason | Cause |
 |---|---|

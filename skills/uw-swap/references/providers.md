@@ -25,6 +25,8 @@ CHAIN.SYMBOL-CONTRACT_ADDRESS
 | Stellar native XLM | `XLM.XLM` |
 | Stellar classic asset (`CODE-ISSUER`) | `XLM.USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` |
 
+**Which spelling to send.** An asset `GET /v3/tokens` lists: its catalog identifier, which every provider takes; a raw address reaches only the DEXes and LI.FI. An asset the list lacks (the DEXes and LI.FI have no catalog): the chain-prefixed address, as above. **Responses use one spelling per asset**, whatever you sent, so compare asset fields with each other, not with your request. `ZEC.ZECSHIELDED` is not listed on v3: send `ZEC.ZEC`.
+
 For BARTER, ONEINCH and UNISWAP, use the contract address directly without a symbol — both assets must be on the same chain.
 
 For JUPITER, use a known identifier (`SOL.SOL`, `SOL.USDC-EPJF…`) or the SPL mint address — `SOL.<mint>` or a bare mint, no `chainId` needed. **Mints are case-sensitive base58 — pass them verbatim** (never upper/lowercase them). The wSOL mint (`So11111111111111111111111111111111111111112`) means native SOL.
@@ -86,6 +88,7 @@ Trade Assets (`~`), synthetics (`/`), and derived assets (`THOR.X`) are **not** 
 | STELLAR_DEX | DEX | `excellent` | Stellar only. Native order book + classic liquidity pools via Horizon path payments. Third-party `destinationAddress` supported. No token list. |
 | AXELAR_ITS | Bridge | `excellent` | Same-token 1:1 bridge, Stellar ↔ Ethereum, XLM and SHX only. Not a swap — both sides are the same asset. |
 | NEAR | DEX | `fair` | NEAR ecosystem + cross-chain via 1Click |
+| NEAR_CONFIDENTIAL | DEX | `fair` | The same rail run privately (`privacy: "basic"`): joins a `/v3/rate` unless `privacy` leaves it out. Allows same-asset private sends |
 | THORCHAIN_MEMOLESS | DEX | `excellent` | **v3 only.** A THORChain swap paid with a **plain transfer** (`transfer` execution — no memo / OP_RETURN / calldata), for wallets that cannot attach one. Native coins only (not tokens, not RUNE). The deposit address and the **exact** amount come from `/commit`; the amount is up to 0.001 lower than requested — send exactly `execution.amount`. Listed by `GET /v3/providers` only while enabled server-side. |
 | LETSEXCHANGE | P2P | `good` | Wide cross-chain coverage |
 | STEALTHEX | P2P | `fair` | Wide cross-chain coverage |

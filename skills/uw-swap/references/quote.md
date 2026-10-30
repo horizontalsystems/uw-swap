@@ -42,11 +42,12 @@ is the only call with side effects: it creates the real order with the provider 
 | sellAmount | string | conditional | Decimal string, e.g. `"0.1"`. Exactly one of sellAmount / buyAmount |
 | buyAmount | string | conditional | Quote by **exact output** — "deliver exactly this much". **NEAR only**; see below |
 | slippage | number | yes | Tolerance 0–99 |
-| providers | string[] | no | Filter to specific providers |
+| providers | string[] | no | Filter to specific providers. Without it the server calls only providers that can serve the request |
+| privacy | string[] | no | Privacy levels to include: `none`, `basic`. Absent = every level, so confidential routes (`NEAR_CONFIDENTIAL`) can appear; send `["none"]` for public providers only |
 | floating | boolean | no | P2P only. Default `true` |
 | streamingInterval / streamingQuantity | number | no | THORChain/Mayachain only |
 
-A rate needs no addresses — it builds nothing.
+A rate needs no addresses — it builds nothing. Providers that cannot serve the request, or are suspended, are not called and do not appear in the response. A provider you name that cannot serve it comes back in `providerErrors` with the reason.
 
 ### Exact output (`buyAmount`)
 
@@ -54,14 +55,35 @@ Send `buyAmount` instead of `sellAmount` when the user names what they want to *
 exactly 0.005 BTC") rather than what they want to spend. Send exactly one of the two — both or
 neither is a 400.
 
-**Only NEAR serves this.** Every other provider returns `routeNotFound` with "Provider cannot quote
-an exact output amount", so send `providers: ["NEAR"]` and don't report the rest as failures.
+**Only NEAR and NEAR_CONFIDENTIAL serve this**, and without `providers` only they are called. A provider
+you name that cannot returns `routeNotFound` with "Provider cannot quote an exact output amount".
 
 The response swaps which field is the answer: `sellAmount` becomes **the amount the user must send**
 and `expectedBuyAmount` is exactly what they asked for (with `minBuyAmount` equal to it — a real
 guarantee, not an estimate). `sellAmount` includes a ~1% buffer over `meta.near.minSellAmount`; the
 unused part is **refunded**, so describe it as "send up to X", never as a fee. Sending less than
 `minSellAmount` gets the deposit refunded instead of swapped.
+
+### Zcash addresses (`addressRules`)
+
+A `/rate` or `/preview` route with `ZEC.ZEC` on either side says which addresses to send:
+
+```jsonc
+"addressRules": {
+  "destination": {                                   // buying ZEC
+    "unified": { "receivers": ["orchard", "sapling"], "requiresOneOf": ["orchard", "transparent"] },
+    "transparent": true,
+    "tex": true
+  },
+  "refund": { "transparent": true },                 // selling ZEC
+  "source": { "transparent": true, "sameAsRefund": true }
+}
+```
+
+**If `unified` is present, send a unified (`u1…`) address; otherwise send a transparent one.** The unified
+address must carry a receiver from `requiresOneOf`; to build one for the route, use `receivers`. With
+`sameAsRefund: true`, a `sourceAddress` you send must equal `refundAddress`, or leave it out. A ZEC sell
+to EXOLIX may get a unified deposit address: your wallet must be able to pay one.
 
 ## `/preview` request
 
